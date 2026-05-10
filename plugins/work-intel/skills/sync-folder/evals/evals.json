@@ -1,0 +1,37 @@
+{
+  "skill_name": "sync-folder",
+  "evals": [
+    {
+      "id": 0,
+      "name": "drop-new-files",
+      "prompt": "i just dropped 3 new markdown files into my work-knowledge folder, can you sync them so they show up in tomorrow's briefing?",
+      "expected_output": "Skill runs sync_folder.py against the configured WORK_INTEL_HOME, summary reports 3 new files in folder labeled 'work-knowledge', offsets.json post-state contains 3 entries, ChromaDB documents collection has chunks for all 3 files.",
+      "fixture_pre_state": "WORK_INTEL_HOME has empty offsets.json. Watched folder contains 3 .md files (auth-migration-plan, q3-okrs, slo-review).",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "scoped-by-label",
+      "prompt": "sync just my research folder please, the work-knowledge stuff hasn't changed",
+      "expected_output": "Skill detects that user wants only the 'research' label, runs sync_folder.py with --label research, summary reports 1 new file in research folder only, work-folder is left untouched in offsets.",
+      "fixture_pre_state": "WORK_INTEL_HOME has empty offsets.json. Two watches configured: 'work-knowledge' (1 .md file) and 'research' (1 .md file).",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "deletion-cleanup",
+      "prompt": "I removed an obsolete mongo runbook from my knowledge folder yesterday — please clean up the index so it stops surfacing in searches",
+      "expected_output": "Skill runs sync_folder.py, summary reports 1 deleted file (the missing mongo runbook), 2 unchanged files. Post-state offsets.json has 2 entries (the missing one is dropped).",
+      "fixture_pre_state": "WORK_INTEL_HOME has offsets.json with 3 entries. Watched folder has only 2 of those 3 files on disk (old-runbook-mongo.md was deleted).",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "no-op-already-synced",
+      "prompt": "scan my watched folder",
+      "expected_output": "Skill runs sync_folder.py, summary reports 0 new, 0 modified, 0 deleted, all files unchanged. User-facing message tells them nothing changed.",
+      "fixture_pre_state": "WORK_INTEL_HOME has offsets.json that exactly matches the 2 .md files on disk (mtime + size identical).",
+      "files": []
+    }
+  ]
+}

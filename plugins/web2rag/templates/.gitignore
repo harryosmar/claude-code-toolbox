@@ -1,0 +1,28 @@
+# Secrets — never commit
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# Persistent data — mounted as docker volumes
+data/
+reports/
+
+# Eval artefacts
+eval/testsets/*.json
+!eval/testsets/.gitkeep
+
+# Widget build artefacts
+widget/dist/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Logs
+*.log

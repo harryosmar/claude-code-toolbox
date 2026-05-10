@@ -1,0 +1,46 @@
+{
+  "skill_name": "pre-meeting-intel",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "prep me for a meeting about the SIPGN portal incident — the webchat widget thing",
+      "expected_output": "A 1-page brief covering the SIPGN portal webchat/WA exposure incident. Should include: background (webchat on pre-login page), key decision (MR !1341 takeout), current status (merged/pending revert), people involved (war room team), open questions (revert timing, RCA).",
+      "files": [],
+      "assertions": [
+        "Output contains '# Pre-Meeting Brief' header",
+        "Background section describes the webchat/portal exposure",
+        "MR !1341 is mentioned",
+        "Source citations use bracketed [WA: or [MR: format",
+        "People Involved section lists at least one person or @lid",
+        "Output stays under 700 words (concise 1-pager)"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I have a meeting about SIPGN-1700, what do I need to know?",
+      "expected_output": "A 1-page brief on SIPGN-1700 (FE config promotion). Should cover: what SIPGN-1700 is (role Pemantau-Nasional config), current status (Jira Done but FE config prod promotion unconfirmed), the staleness (7+ days since WA escalation), and MR !1321.",
+      "files": [],
+      "assertions": [
+        "Output contains '# Pre-Meeting Brief' header",
+        "SIPGN-1700 is mentioned",
+        "FE config or prod promotion is mentioned",
+        "Source citations use bracketed format",
+        "A staleness warning (⚠️ POSSIBLY STALE or ⚠️ STALE) appears if relevant context is >7 days old",
+        "MR !1321 is referenced"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "brief me on the xpass audit trail issue before the team sync",
+      "expected_output": "A 1-page brief on the xpass actorId / audit trail issue. Should cover: the actorId detection bug on add/revoke user events, who reported it, current status (tracing, no fix confirmed), and the related portal audit trail question.",
+      "files": [],
+      "assertions": [
+        "Output contains '# Pre-Meeting Brief' header",
+        "actorId or audit trail is mentioned in the brief",
+        "Source citations use bracketed [WA: format",
+        "Current Status section describes the open/unresolved state",
+        "People Involved section is present"
+      ]
+    }
+  ]
+}

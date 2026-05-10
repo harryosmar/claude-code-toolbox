@@ -1,0 +1,45 @@
+{
+  "skill_name": "incident-context",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "what's going on with the service desk incident last night? I need context before the war room",
+      "expected_output": "A 5-question incident context brief covering the SIPGN portal webchat/WA incident from 2026-05-05/06. Should surface MR !1341 (takeout), the war room participants, and the revert plan. All items cited with [WA: ...] format.",
+      "files": [],
+      "assertions": [
+        "The output contains '## Incident Context Brief' header",
+        "All 5 numbered questions (1-5) are answered in the output",
+        "The webchat widget or portal incident is mentioned as the problem",
+        "MR !1341 is referenced",
+        "Source citations use the bracketed [WA: ...] or [MR: ...] format",
+        "A confidence level (High/Medium/Low) is stated for at least one answer"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "explain the SIPGN portal incident — webchat widget was exposed on the public page",
+      "expected_output": "Incident brief for the portal webchat exposure incident. Should explain what happened (webchat+WA on pre-login page → security issue), who was involved, what containment was done (MR !1341), and what the revert plan is.",
+      "files": [],
+      "assertions": [
+        "The output contains '## Incident Context Brief' header",
+        "All 5 numbered questions are answered",
+        "The containment action (remove webchat/WA or MR !1341) is described",
+        "Source citations use bracketed format [WA: or [MR: or [Jira:",
+        "A revert or follow-up plan is mentioned in the Plan section"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "what happened with xpass actorId not being detected? need root cause",
+      "expected_output": "Root cause brief for the xpass event actorId detection bug reported 2026-05-06. Should identify the bug (add/revoke user events not capturing actorId), who reported it, current status (tracing), and next steps.",
+      "files": [],
+      "assertions": [
+        "The output contains '## Incident Context Brief' header",
+        "actorId or xpass is mentioned in the problem description",
+        "All 5 numbered questions are answered",
+        "Source citations use bracketed format",
+        "Current status is described (tracing/investigating/unknown)"
+      ]
+    }
+  ]
+}

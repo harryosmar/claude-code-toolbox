@@ -1,0 +1,24 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# build artefacts
+dist/
+build/
+*.tgz
+node_modules/
+
+# local secrets — should never live in the plugin repo
+.env
+.env.local
+
+# scratch
+.scratch/
+*.log

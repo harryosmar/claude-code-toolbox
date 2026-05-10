@@ -1,0 +1,47 @@
+{
+  "skill_name": "morning-briefing",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "good morning, give me my briefing for today",
+      "expected_output": "A structured daily intelligence briefing with 🔴 Must Do, 🟡 Should Do, 🔵 This Week sections. ChromaDB is queried first and briefing rendered before delta ingestion runs. Delta sync result appears as a footer line after the briefing body.",
+      "files": [],
+      "assertions": [
+        "The output contains a '# Daily Intelligence Briefing' header with today's date",
+        "The output contains the '🔴 TODAY — Must Do' section header",
+        "The output contains the '🟡 TODAY — Should Do' section header",
+        "The output contains the '🔵 THIS WEEK — Plan Ahead' section header",
+        "The output contains the '🔔 REMINDERS & FOLLOW-UPS' section header",
+        "The delta ingestion status line appears at the end (either ↻, ✓, or ⚠️ sync line)",
+        "Items in the briefing include source citations in [WA:, Jira:, Alert:] format",
+        "The skill does NOT wait for ingestion before rendering the briefing (ChromaDB query runs first)"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "what should I work on today? there was an incident last night with service desk",
+      "expected_output": "A briefing that surfaces the service desk incident as a high-priority item. Incident referenced from WhatsApp war room messages in ChromaDB. Delta sync runs after and appends a status line.",
+      "files": [],
+      "assertions": [
+        "The output contains a '# Daily Intelligence Briefing' header",
+        "The incident or 'service desk' is mentioned in the 🔴 or 🟡 section",
+        "The item cites its WhatsApp source with [WA: ...] citation format",
+        "A delta sync footer line appears at the bottom of the output",
+        "The briefing renders from ChromaDB data without first waiting for a WAHA network fetch"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "morning briefing please, also check if SIPGN-1700 needs action",
+      "expected_output": "A full morning briefing plus a mention of SIPGN-1700 with its status. SIPGN-1700 should appear in the high-priority sections since it was escalated in WhatsApp and is stale (>7 days). Delta sync footer at end.",
+      "files": [],
+      "assertions": [
+        "The output contains a '# Daily Intelligence Briefing' header",
+        "SIPGN-1700 is mentioned in the briefing",
+        "SIPGN-1700 appears in 🔴 or 🟡 section (it is stale and escalated)",
+        "The output contains a staleness warning (⚠️ STALE) for items not updated recently",
+        "A delta sync footer line appears at the bottom"
+      ]
+    }
+  ]
+}

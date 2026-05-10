@@ -1,0 +1,8 @@
+{
+  "name": "work-intel",
+  "description": "Context Intelligence plugin — aggregates Jira, GitLab, Gmail, WhatsApp (WAHA), Telegram, Google Drive, Truewatch APM, and watched local folders (drop-zone for PDF/DOCX/XLSX/PPTX/Markdown reference docs) into a local ChromaDB vector knowledge base with delta ingestion. Provides daily briefings, incident root-cause context, meeting prep, and RAG quality evaluation via RAGAS. Role-agnostic: works for engineers, leads, managers, and on-call responders.",
+  "version": "0.3.0",
+  "author": {
+    "name": "Harry"
+  }
+}

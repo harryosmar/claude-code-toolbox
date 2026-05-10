@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>web2rag — chat widget demo</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: #111;
+    background:
+      radial-gradient(ellipse at top left, #eef2ff 0%, transparent 60%),
+      radial-gradient(ellipse at bottom right, #ecfeff 0%, transparent 60%),
+      #f8fafc;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 32px 24px 16px;
+    max-width: 920px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  header .badge {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #6B5BFF;
+    background: #ece9ff;
+    padding: 4px 10px;
+    border-radius: 999px;
+    margin-bottom: 12px;
+  }
+  header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: #0b1020;
+    margin-bottom: 4px;
+  }
+  header p.lede {
+    font-size: 14px;
+    color: #4b5563;
+    max-width: 64ch;
+  }
+  main {
+    flex: 1;
+    padding: 8px 24px 64px;
+    max-width: 920px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+    margin-top: 24px;
+  }
+  .card {
+    background: #ffffffcc;
+    backdrop-filter: blur(6px);
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    padding: 20px 22px;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.02), 0 8px 24px -16px rgba(11,16,32,0.12);
+  }
+  .card h3 {
+    font-size: 15px;
+    font-weight: 600;
+    color: #0b1020;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card .swatch {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #6B5BFF;
+    flex: none;
+  }
+  .card .swatch.green { background: #10b981; }
+  .card .swatch.amber { background: #f59e0b; }
+  .card p {
+    font-size: 13.5px;
+    color: #4b5563;
+    line-height: 1.55;
+  }
+  .prompts {
+    margin-top: 36px;
+    padding: 20px 22px;
+    background: #ffffffcc;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+  }
+  .prompts h2 {
+    font-size: 15px;
+    font-weight: 600;
+    color: #0b1020;
+    margin-bottom: 10px;
+  }
+  .prompts ul {
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 8px;
+  }
+  .prompts li button {
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    font-size: 13.5px;
+    color: #1f2937;
+    background: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .prompts li button:hover {
+    background: #eef2ff;
+    border-color: #c7d2fe;
+  }
+  footer {
+    padding: 16px 24px 32px;
+    max-width: 920px;
+    margin: 0 auto;
+    width: 100%;
+    color: #6b7280;
+    font-size: 12px;
+  }
+  footer code {
+    background: #1f2937;
+    color: #e5e7eb;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 11.5px;
+  }
+  .arrow {
+    position: fixed;
+    right: 96px;
+    bottom: 36px;
+    color: #6B5BFF;
+    font-size: 13px;
+    font-weight: 500;
+    background: #ece9ff;
+    padding: 8px 12px;
+    border-radius: 10px;
+    box-shadow: 0 2px 12px rgba(107,91,255,0.18);
+    pointer-events: none;
+    animation: nudge 2s ease-in-out infinite;
+  }
+  .arrow::after {
+    content: "→";
+    margin-left: 6px;
+    font-size: 16px;
+  }
+  @keyframes nudge {
+    0%, 100% { transform: translateX(0); opacity: 0.95; }
+    50%      { transform: translateX(6px); opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <span class="badge">web2rag · demo</span>
+  <h1 id="title">Chat widget demo</h1>
+  <p class="lede" id="lede">
+    This page mounts the same widget your customers paste into their site.
+    All retrieval, guards, and citations run against your local stack —
+    no third-party hosting.
+  </p>
+</header>
+
+<main>
+  <div class="grid">
+    <div class="card">
+      <h3><span class="swatch"></span>Production widget</h3>
+      <p>
+        Loaded from <code style="font-size:11.5px;">GET /widget.js</code> on this same api.
+        Pointed at <code style="font-size:11.5px;">/chat</code> + <code style="font-size:11.5px;">/feedback</code>.
+        Real <code style="font-size:11.5px;">guard_query</code> + <code style="font-size:11.5px;">guard_output</code> run server-side.
+      </p>
+    </div>
+    <div class="card">
+      <h3><span class="swatch green"></span>Cost</h3>
+      <p>
+        Each turn calls Claude (paid) — roughly <strong>~$0.01/msg</strong> on Haiku.
+        For free dry-runs use the <code style="font-size:11.5px;">/web2rag-chat-test</code> skill.
+      </p>
+    </div>
+    <div class="card">
+      <h3><span class="swatch amber"></span>Bilingual</h3>
+      <p>
+        The widget mirrors the user's language — type in English or Bahasa Indonesia
+        and the assistant will reply in kind. Citations link back to the source pages.
+      </p>
+    </div>
+  </div>
+
+  <div class="prompts">
+    <h2 id="prompts-title">Try one of these</h2>
+    <ul id="prompts-list">
+      <!-- Filled in by inline JS below based on detected site_id. -->
+    </ul>
+  </div>
+</main>
+
+<footer>
+  Demo served from <code id="origin"></code>.
+  Embed snippet for your own site: run <code>/web2rag-embed-snippet &lt;site-id&gt;</code>.
+</footer>
+
+<div class="arrow" id="arrow">Open the chat</div>
+
+<!--
+  The widget mounts here. URLs are relative so this demo page works on any
+  deployment (dev: http://localhost:8787/demo, prod: https://api.example.com/demo).
+  The site-id is filled at render time by the /demo route.
+-->
+<script
+  id="web2rag-widget"
+  src="./widget.js"
+  data-api-url="./chat"
+  data-feedback-url="./feedback"
+  data-site-id="__SITE_ID__"
+  data-theme="auto"
+  data-accent-color="#6B5BFF"
+  data-launcher-position="bottom-right"
+  data-locale="auto"
+></script>
+
+<script>
+  // Tiny page-level UX: fill the origin pill, load some sample prompts.
+  document.getElementById("origin").textContent = location.origin + location.pathname;
+
+  // Sample prompts are language-aware (mirror the widget's behaviour) and
+  // chosen to exercise interesting retrieval paths for the demo. Operators
+  // can edit these per-deployment in widget/demo.html.
+  const samples = (navigator.language || "en").startsWith("id")
+    ? [
+        "Apa itu Program Makan Bergizi?",
+        "Apa tugas Badan Gizi Nasional?",
+        "Bagaimana cara mendapatkan bantuan MBG?",
+        "Berapa anggaran program MBG per anak?"
+      ]
+    : [
+        "What is the Makan Bergizi program?",
+        "Who is eligible for MBG?",
+        "What does BGN do?",
+        "How is the MBG program funded?"
+      ];
+
+  const ul = document.getElementById("prompts-list");
+  for (const q of samples) {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = q;
+    btn.addEventListener("click", () => {
+      // Open the widget and inject the prompt. The widget exposes a global
+      // `web2rag.open(question)` once mounted; we wait briefly for it.
+      const tryOpen = (attempts = 0) => {
+        if (window.web2rag && typeof window.web2rag.open === "function") {
+          window.web2rag.open(q);
+        } else if (attempts < 20) {
+          setTimeout(() => tryOpen(attempts + 1), 100);
+        }
+      };
+      tryOpen();
+    });
+    li.appendChild(btn);
+    ul.appendChild(li);
+  }
+
+  // Hide the "open the chat" arrow once the user actually opens the widget
+  // (the widget toggles a class on body when its panel is open).
+  const arrow = document.getElementById("arrow");
+  const obs = new MutationObserver(() => {
+    if (document.querySelector(".w2r-launcher.is-open, .w2r-panel.is-open")) {
+      arrow.style.display = "none";
+    }
+  });
+  obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+</script>
+</body>
+</html>

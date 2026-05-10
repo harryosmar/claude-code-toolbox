@@ -1,0 +1,19 @@
+{
+  "launcher_aria_label": "Buka obrolan",
+  "close_aria_label": "Tutup obrolan",
+  "header_default": "Tanya dokumentasi",
+  "input_placeholder": "Tulis pertanyaan…",
+  "send_aria_label": "Kirim",
+  "thinking": "Sedang berpikir…",
+  "sources_label": "Sumber",
+  "corrected_badge": "Dikoreksi oleh filter keamanan",
+  "blocked_message": "Maaf, saya tidak bisa membantu dengan itu.",
+  "no_context_message": "Saya tidak menemukan informasi terkait di dokumentasi.",
+  "error_generic": "Terjadi kesalahan. Silakan coba lagi.",
+  "powered_by": "Didukung web2rag",
+  "feedback_up_label": "Jawaban membantu",
+  "feedback_down_label": "Tidak membantu",
+  "feedback_down_prompt": "Apa yang kurang atau salah? (opsional)",
+  "feedback_submit": "Kirim",
+  "feedback_thanks": "Terima kasih atas umpan baliknya!"
+}

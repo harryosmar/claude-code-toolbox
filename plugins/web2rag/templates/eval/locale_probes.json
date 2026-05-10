@@ -1,0 +1,39 @@
+[
+  {
+    "question": "apa itu sspg & bagaimana cara daftar menjadi mitra",
+    "expected_language": "id",
+    "must_not_refuse": true,
+    "expected_source_url_substr": "/faq",
+    "tags": ["seed", "id", "typo-robustness", "definition", "procedure"],
+    "notes": "Same case as the DeepEval seed. Verifies guards don't false-refuse a legitimate ID government-FAQ query AND the bot mirrors ID. Typo: SSPG written instead of SPPG."
+  },
+  {
+    "question": "what is SPPG and how do I register as a partner?",
+    "expected_language": "en",
+    "must_not_refuse": true,
+    "expected_source_url_substr": "/faq",
+    "tags": ["seed", "en", "definition", "procedure"],
+    "notes": "English counterpart of the SPPG case. Verifies bilingual symmetry — bot answers in EN when asked in EN."
+  },
+  {
+    "question": "siapa kepala badan gizi nasional saat ini?",
+    "expected_language": "id",
+    "must_not_refuse": true,
+    "tags": ["id", "person-query"],
+    "notes": "Person-related ID query. Pre-fix Presidio over-redacted person names — this probe catches if the corpus regresses to placeholder soup."
+  },
+  {
+    "question": "bagaimana program MBG dijalankan?",
+    "expected_language": "id",
+    "must_not_refuse": true,
+    "tags": ["id", "program-mechanics"],
+    "notes": "Operational ID query — should pass guards and find content in /operasional-sppg or related press releases."
+  },
+  {
+    "question": "explain how MBG works",
+    "expected_language": "en",
+    "must_not_refuse": true,
+    "tags": ["en", "program-mechanics"],
+    "notes": "EN counterpart for MBG mechanics — bilingual symmetry."
+  }
+]

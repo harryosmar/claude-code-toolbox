@@ -1,0 +1,24 @@
+{
+  "name": "claude-code-toolbox-marketplace",
+  "description": "Personal Claude Code plugin marketplace. web2rag scaffolds a self-hosted RAG chatbot from any website (FastAPI + Chroma + bilingual BGE-M3, Claude Citations API, DeepEval/DeepTeam audit). mac-housekeeping audits and reclaims Mac disk space with mac-specific gotchas. work-intel delta-ingests Jira/GitLab/Gmail/WA/Telegram/Drive/Truewatch into a local ChromaDB.",
+  "owner": {
+    "name": "Harry"
+  },
+  "plugins": [
+    {
+      "name": "web2rag",
+      "source": "./plugins/web2rag",
+      "description": "Scaffolder plugin that turns any website into a self-hosted RAG chatbot. Generates a sibling project containing a docker-compose stack (FastAPI + Chroma), in-process bilingual BGE-M3 embeddings, 3-layer guard architecture (guard_ingest / guard_query / guard_output with language-aware prompt-injection + per-site PII allowlist), Claude-powered chat via native Citations API (Sonnet 4.6 or Haiku 4.5 selectable), embeddable Web Component widget with thumbs-up/down feedback, and DeepEval (correctness + capability) + DeepTeam (red-team) audit suite with switchable Anthropic Haiku / remote Ollama judges. Mirrors the peruri-go-scaffolder model. Skills include /web2rag-init (scaffold), /web2rag-ingest (zero-cost crawl), /web2rag-chat (paid /chat SSE from TUI), /web2rag-chat-test (cost-free preview via in-session subagent), /web2rag-audit (DeepEval+DeepTeam four-axis evaluation)."
+    },
+    {
+      "name": "mac-housekeeping",
+      "source": "./plugins/mac-housekeeping",
+      "description": "Mac-only disk housekeeping toolkit. /disk-audit produces a read-only report ranking the biggest space consumers on the host classified by reversibility class (safe-cache / project-rebuild / system-app / app-manual / user-data). /disk-cleanup drives a tiered, per-action consent-gated reclaim flow with mac-specific gotcha handling (Docker.raw sparse-file behaviour, ~/Library Group Containers being live app state not caches, active MCP server node_modules safety, auto-mode classifier deletion blocks → fall-back to handing the user the exact command to paste)."
+    },
+    {
+      "name": "work-intel",
+      "source": "./plugins/work-intel",
+      "description": "Context Intelligence plugin — delta-ingests Jira, GitLab, Gmail, WhatsApp (WAHA), Telegram, Google Drive (Docs/Sheets/Slides), Truewatch APM, and watched local folders (Dropbox-style drop-zone for PDF/DOCX/XLSX/PPTX/Markdown reference docs — new files auto-embed, modified files re-embed, removed files lose their chunks) into a local ChromaDB vector knowledge base. Provides daily briefings, incident root-cause context, meeting prep, document ingestion, RAG quality evaluation via RAGAS, and portable backup/restore. Role-agnostic. Zero external API cost."
+    }
+  ]
+}

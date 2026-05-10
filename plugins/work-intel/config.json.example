@@ -1,0 +1,99 @@
+{
+  "embedding": {
+    "model": "jinaai/jina-embeddings-v5-text-small",
+    "dim": 1024
+  },
+  "waha": {
+    "session": "default",
+    "url": "http://localhost:3001",
+    "targets": [
+      { "type": "group",     "id": "120363xxxxxx@g.us", "name": "My Engineering Group" },
+      { "type": "community", "id": "120363xxxxxx@g.us", "name": "My Company Community" },
+      { "type": "private",   "id": "628xxxx@c.us",      "name": "Alice" }
+    ]
+  },
+  "telegram": {
+    "targets": [
+      { "type": "channel", "id": "-100xxxxxxxxxx", "name": "Dev Updates" },
+      { "type": "group",   "id": "-100xxxxxxxxxx", "name": "Team Chat" },
+      { "type": "private", "id": "xxxxxxxxxx",     "name": "Manager" }
+    ]
+  },
+  "jira": {
+    "projects": ["ENG", "INFRA"],
+    "initial_days": 90
+  },
+  "gitlab": {
+    "groups": ["engineering"],
+    "initial_days": 30
+  },
+  "gmail": {
+    "labels": ["INBOX", "STARRED"],
+    "initial_days": 90
+  },
+  "gdrive": {
+    "folders": ["shared-with-me", "my-drive"]
+  },
+  "local_folders": {
+    "watches": [
+      {
+        "path": "/Users/me/work-intel-knowledge",
+        "label": "work-knowledge",
+        "extensions": [".pdf", ".docx", ".xlsx", ".pptx", ".md", ".txt"],
+        "recursive": true
+      }
+    ]
+  },
+  "truewatch": {
+    "initial_hours": 72
+  },
+  "ragas": {
+    "llm_judge": "ollama",
+    "ollama_model": "llama3.2",
+    "anthropic_model": "claude-haiku-4-5-20251001"
+  },
+  "judge": {
+    "_comment": "Tier C only — used by /work-intel:evaluate-rag and /work-intel:security-audit batch eval. Day-to-day chatbot does NOT touch this. provider=anthropic needs ANTHROPIC_API_KEY env var. provider=ollama can point to a remote host via ollama_base_url.",
+    "provider": "anthropic",
+    "anthropic_model": "claude-haiku-4-5-20251001",
+    "ollama_model": "llama3.2",
+    "ollama_base_url": "http://192.0.2.10:11434"
+  },
+  "guards": {
+    "_comment": "Tier A (subagent — no API key, runs in your Claude Code session) + Tier B (local Presidio classifier — multilingual PII NER). Inline guards on every chatbot interaction.",
+    "ingest": {
+      "enabled": true,
+      "pii_classifier": {
+        "backend": "spacy",
+        "languages": ["en", "id"],
+        "_comment": "backend=spacy (default, ~30 ms/item, multilingual via xx_ent_wiki_sm) or backend=transformers (~250 ms/item, higher Bahasa recall via cahya/xlm-roberta-base-indonesian-NER)."
+      },
+      "redact_on_pii": true,
+      "block_on_breach": false
+    },
+    "query": {
+      "enabled": true,
+      "subagent_model": "sonnet",
+      "block_on_breach": true,
+      "max_latency_ms": 5000,
+      "_comment": "subagent_model: sonnet (default, more accurate) or haiku (faster). On breach: skill stops with [SECURITY] Query blocked banner."
+    },
+    "output": {
+      "enabled": true,
+      "subagent_model": "sonnet",
+      "redact_on_pii": true,
+      "block_on_toxicity": true,
+      "block_on_illegal": true,
+      "max_latency_ms": 5000,
+      "_comment": "Inline output guard runs after synthesis-agent before display."
+    },
+    "allowlist": [],
+    "_allowlist_comment": "List of base_ids (sha) the user has explicitly accepted. Both query and output guards skip PII checks for content from these sources."
+  },
+  "security_audit": {
+    "_comment": "Tier C batch — used by /work-intel:security-audit. Mirrors evaluate-rag report shape.",
+    "sample_size": 200,
+    "regression_threshold_pct": 5.0,
+    "guards": ["PrivacyGuard", "PromptInjectionGuard", "ToxicityGuard", "IllegalGuard", "TopicalGuard", "CybersecurityGuard"]
+  }
+}

@@ -1,0 +1,51 @@
+# {{project_name}}
+
+Self-hosted website-to-RAG chatbot, scaffolded by `web2rag` v{{plugin_version}}.
+
+See `CLAUDE.md` for the architecture brief, cost contract, and inviolable rules.
+
+## Quickstart
+
+```bash
+# 1. Fill in the env (interactive: prompts for ANTHROPIC_API_KEY + CHAT_MODEL)
+/web2rag-setup
+
+# 2. Start the stack
+/web2rag-serve
+
+# 3. Ingest a website (zero outbound cost)
+/web2rag-ingest https://docs.acme.com --max-pages 200
+
+# 4. Get the embed snippet
+/web2rag-embed-snippet docs.acme.com
+# paste the printed <script> tag into the customer's HTML
+
+# 5. (later) audit the bot
+/web2rag-audit all --judge anthropic-haiku --output html
+```
+
+## Skills available in this project
+
+All non-init skills assume cwd. Pass `--project <path>` to invoke from elsewhere.
+
+- `/web2rag-setup` — fill `.env`, verify docker
+- `/web2rag-serve` / `/web2rag-stop` — docker compose lifecycle
+- `/web2rag-ingest <url>` — crawl + chunk + embed (politeness flags: `--force`, `--rate`, `--concurrency`, `--user-agent`)
+- `/web2rag-update <site>` — delta re-crawl
+- `/web2rag-list-sites` / `/web2rag-remove-site <site>`
+- `/web2rag-embed-snippet <site>` — print the customer-facing `<script>` tag
+- `/web2rag-audit quality|capability|redteam|all --judge anthropic-haiku|ollama:<model>` (DeepEval + DeepTeam, four-axis)
+- `/web2rag-chat-test "<question>"` — cost-free preview via in-session Claude Code subagent (same retrieved chunks + system prompt, $0)
+- `/web2rag-chat "<question>"` — paid real /chat SSE stream from TUI (~$0.01/msg on Haiku, full Python guards)
+
+## What's where
+
+```
+server/    FastAPI api on :8787
+widget/    embeddable Web Component
+eval/      RAGAS + deepeval + deepteam runners
+data/      Chroma vector store (mounted volume)
+reports/   audit outputs
+```
+
+Generated {{generated_at}}.

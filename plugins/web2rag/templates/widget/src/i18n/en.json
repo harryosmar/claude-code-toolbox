@@ -1,0 +1,19 @@
+{
+  "launcher_aria_label": "Open chat",
+  "close_aria_label": "Close chat",
+  "header_default": "Ask the docs",
+  "input_placeholder": "Ask a question…",
+  "send_aria_label": "Send",
+  "thinking": "Thinking…",
+  "sources_label": "Sources",
+  "corrected_badge": "Corrected by safety filter",
+  "blocked_message": "I can't help with that.",
+  "no_context_message": "I couldn't find anything in the docs about that.",
+  "error_generic": "Something went wrong. Please try again.",
+  "powered_by": "Powered by web2rag",
+  "feedback_up_label": "Helpful answer",
+  "feedback_down_label": "Not helpful",
+  "feedback_down_prompt": "What was missing or wrong? (optional)",
+  "feedback_submit": "Send",
+  "feedback_thanks": "Thanks for the feedback!"
+}

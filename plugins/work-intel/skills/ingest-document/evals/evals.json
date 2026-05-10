@@ -1,0 +1,43 @@
+{
+  "skill_name": "ingest-document",
+  "_note": "Fixture paths are relative to this evals.json file. The eval runner should resolve them or set cwd to the directory containing this file before invoking the skill.",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "ingest test-fixtures/postmortem-auth-2026-04.md",
+      "expected_output": "Confirmation message showing the file was ingested, chunks stored count, and entity summary listing people (Reza Firmansyah, Siti Rahayu, Budi Santoso), services (auth-service, portal-informasi-fe-sipgn, sipgn-gateway), key dates (2026-04-22, deadlines), and action items extracted from the post-mortem.",
+      "files": [],
+      "assertions": [
+        "Output contains ✅ Ingested confirmation with the filename",
+        "People section lists at least Reza or Budi or Siti",
+        "Services section mentions auth-service or sipgn-gateway",
+        "Action items section is non-empty (lists at least one item)",
+        "Key dates section mentions at least one date"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "add test-fixtures/meeting-notes-handover-2026-05.txt to the knowledge base",
+      "expected_output": "Confirmation message showing the file was ingested, with entity extraction identifying people (Agus Purnomo, Dewi Lestari, Fajar Nugroho, Hendra Wijaya), services (bgn-gateway), tickets (SIPGN-1688, SIPGN-1701, BGN-204), and action items with deadlines.",
+      "files": [],
+      "assertions": [
+        "Output contains ✅ Ingested confirmation with the filename",
+        "People section lists at least Agus or Dewi or Fajar",
+        "Services section mentions bgn-gateway",
+        "Action items section mentions at least one deadline",
+        "Tickets or services section mentions SIPGN-1688 or BGN-204"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "ingest test-fixtures/does-not-exist.pdf",
+      "expected_output": "A clear error message that the file does not exist. The skill should stop gracefully without crashing or producing a partial output.",
+      "files": [],
+      "assertions": [
+        "Output contains an error message about the file not existing or not being found",
+        "Output does NOT contain ✅ Ingested",
+        "Output does NOT crash with a Python traceback (no 'Traceback' or 'Error:' from a script)"
+      ]
+    }
+  ]
+}

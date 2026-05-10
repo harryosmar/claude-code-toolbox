@@ -1,0 +1,48 @@
+Meeting Notes — BGN Handover Sync
+Date: 2026-05-05
+Attendees: Agus Purnomo (lead), Dewi Lestari (BE), Fajar Nugroho (DevOps), Hendra Wijaya (QA)
+Facilitator: Agus Purnomo
+
+---
+
+AGENDA: Handover of bgn-gateway service ownership from Team Alpha to Team Beta
+
+---
+
+DISCUSSION POINTS
+
+1. bgn-gateway current state
+   - Running on k8s cluster bgn-prod-01, namespace sipgn-core
+   - Version: v1.8.4, deployed 2026-04-28
+   - Known issue: memory leak under sustained load > 500 req/s (SIPGN-1688)
+   - Fajar Nugroho: "The HPA is set to scale at 70% CPU but the memory issue kicks in earlier — we haven't tuned this yet"
+
+2. Runbook status
+   - Current runbook is outdated (last updated 2026-02-10)
+   - Dewi Lestari agreed to update the runbook by 2026-05-12
+   - Hendra Wijaya will verify runbook steps in staging after Dewi's update
+
+3. On-call schedule
+   - Effective 2026-05-10: Team Beta takes primary on-call for bgn-gateway
+   - Agus Purnomo will shadow for first two weeks
+   - Escalation path: primary → secondary (Fajar) → Agus (backup)
+
+4. Open tickets
+   - SIPGN-1688: Memory leak — P2, no owner yet. Dewi to investigate.
+   - SIPGN-1701: Rate limiting not enforced correctly — P3, assigned to Fajar
+   - BGN-204: TLS cert renewal due 2026-06-01 — Fajar owns this
+
+---
+
+ACTION ITEMS
+
+- Dewi Lestari: Update bgn-gateway runbook — deadline 2026-05-12
+- Hendra Wijaya: Verify runbook in staging — deadline 2026-05-14
+- Fajar Nugroho: Investigate HPA memory tuning — deadline 2026-05-20
+- Dewi Lestari: Own SIPGN-1688 investigation — no hard deadline but P2
+- Fajar Nugroho: Renew TLS cert for BGN-204 — deadline 2026-06-01
+- Agus Purnomo: Send calendar invite for weekly sync — by EOD 2026-05-05
+
+---
+
+NEXT MEETING: 2026-05-12, 10:00 WIB, same channel

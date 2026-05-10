@@ -1,0 +1,29 @@
+{
+  "skill_name": "mac-housekeeping",
+  "evals": [
+    {
+      "id": 1,
+      "name": "audit-direct",
+      "prompt": "my macbook is almost out of space — `df -h` says 6.2 GiB free out of 228. i'm a developer, lots of node and go projects scattered around. can you figure out what's actually eating my disk before i panic and start deleting things?",
+      "expected_output": "A ranked report of biggest space consumers across ~/Library/Caches, Containers, Group Containers, Application Support, ~/go/pkg, scattered node_modules, ~/.npm, ~/.cache, ~/Library/Logs. Each row classified by reversibility (safe-cache / project-rebuild / system-app / app-manual). Read-only — nothing should be deleted. Should NOT pre-emptively run any destructive command.",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 2,
+      "name": "cleanup-with-mcp-trap",
+      "prompt": "i ran the audit, here's the short version:\n\n- ~/go/pkg = 14 GB (safe-cache)\n- ~/.npm = 2.3 GB (safe-cache)\n- ~/Library/Logs = 700 MB (safe-cache)\n- ~/projects/foo/node_modules = 1.2 GB (project-rebuild)\n- ~/projects/claude-plugins/mcp-servers/php-lsp/node_modules = 174 MB (project-rebuild, BUT this powers active MCP)\n- Docker.raw = 16 GB used / 32 GB allocated (system-app)\n\nclean it up. start with the safe stuff.",
+      "expected_output": "Should drive a tiered cleanup. Tier 1 (safe-cache: go modcache, npm cache, Logs) gated behind explicit AskUserQuestion consent. Tier 2 (project node_modules) — must call out the MCP server path as 'powers active tools, deletion will break this session' and offer it as a separate group. Tier 3 (Docker) — must explain that prune doesn't shrink Docker.raw and direct user to Docker Desktop UI for the actual reclaim. Should never silently `rm` anything.",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 3,
+      "name": "audit-symptom-based",
+      "prompt": "xcode just refused to build with 'volume out of space'. i have a 500GB SSD. where do i even start?",
+      "expected_output": "Should trigger /disk-audit even though the user didn't say 'audit'. The trigger comes from the symptom (Xcode space error → low disk). Should produce the audit report, not jump to deleting anything. Should also surface Xcode-specific suspects (~/Library/Developer/Xcode/DerivedData, iOS DeviceSupport).",
+      "files": [],
+      "assertions": []
+    }
+  ]
+}

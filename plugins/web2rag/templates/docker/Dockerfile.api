@@ -1,0 +1,44 @@
+# Multi-stage build.
+# Stage 1: install Python deps. Models are downloaded at first runtime boot
+# (cached in a docker volume) so this image stays slim and rebuilds quick.
+# A future optimisation can pre-bake weights here; for now we keep the
+# foundation lean and let server/models/*.py lazy-init on first /health.
+
+FROM python:3.11-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    HF_HOME=/cache/huggingface \
+    TRANSFORMERS_CACHE=/cache/huggingface \
+    SENTENCE_TRANSFORMERS_HOME=/cache/sentence-transformers
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY pyproject.toml /app/pyproject.toml
+RUN pip install --upgrade pip \
+    && pip install -e . --no-cache-dir
+
+# Presidio uses spaCy for NER; download the small English model at build time
+# so first-request latency stays predictable. Skipped if spaCy isn't a dep yet.
+RUN python -c "import importlib.util as u; import sys; sys.exit(0 if u.find_spec('spacy') else 1)" \
+    && python -m spacy download en_core_web_sm \
+    || echo "spaCy not yet installed; skipping en_core_web_sm download"
+
+COPY server /app/server
+COPY eval   /app/eval
+COPY widget /app/widget
+# tools/ holds operator backfill scripts (e.g. tools.extract_acronyms for
+# corpora ingested before the auto-acronym feature shipped). Optional at
+# runtime — the api itself doesn't import from tools/.
+COPY tools  /app/tools
+
+EXPOSE 8787
+
+CMD ["uvicorn", "server.main:app", "--host", "0.0.0.0", "--port", "8787"]

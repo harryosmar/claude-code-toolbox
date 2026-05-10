@@ -1,0 +1,8 @@
+{
+  "name": "mac-housekeeping",
+  "description": "Mac-only disk housekeeping toolkit. /disk-audit produces a read-only report ranking the biggest space consumers on the host, classified by reversibility class (safe-cache / project-rebuild / system-app). /disk-cleanup drives a tiered, per-action consent-gated reclaim flow with mac-specific gotcha handling (Docker.raw sparse-file behaviour, ~/Library Group Containers, active MCP server node_modules safety, auto-mode classifier deletion blocks). Designed for the moment a developer realises their mac is suddenly almost full and needs to find and free 20+ GB without nuking active work.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Harry"
+  }
+}

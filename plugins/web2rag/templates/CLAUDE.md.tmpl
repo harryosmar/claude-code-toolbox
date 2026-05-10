@@ -1,0 +1,105 @@
+# {{project_name}}
+
+A self-hosted website-to-RAG chatbot, scaffolded by `web2rag` plugin v{{plugin_version}} on {{generated_at}}.
+
+## Architecture (one diagram)
+
+```
+┌────────────────── docker compose (2 services) ────────────────────────────┐
+│                                                                            │
+│   chroma  ──persists──▶ ./data/chroma                                     │
+│                                                                            │
+│   api (FastAPI, port 8787)                                                │
+│     ├─ in-process: BGE-M3 + bge-reranker-v2-m3 + Prompt-Guard-2 + Detoxify│
+│     │              + Presidio  (free, MIT/Apache, baked into image)       │
+│     │                                                                      │
+│     ├─ POST /ingest   scraper ─▶ guard_ingest ─▶ chunker ─▶ embed ─▶ chroma│
+│     ├─ POST /chat     msg ─▶ guard_query ─▶ retrieval ─▶ Claude ─▶        │
+│     │                       guard_output ─▶ SSE stream                     │
+│     ├─ GET  /widget.js, /widget.css                                       │
+│     └─ POST /audit    deepeval + ragas + deepteam runners                 │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Cost contract (hard requirement)
+
+| Phase | Provider | Cost |
+|---|---|---|
+| Ingest (scrape → guard_ingest → chunk → embed → store) | All in-process: Crawl4AI + Prompt-Guard-2 + Presidio + BGE-M3 + Chroma | **$0** |
+| Chat (guard_query → retrieval → LLM → guard_output → SSE) | Claude via Anthropic Console — `CHAT_MODEL=claude-sonnet-4-6` or `claude-haiku-4-5-20251001` in `.env` | paid (Anthropic only) |
+| Audit / eval (DeepEval correctness+capability + DeepTeam security) | Switchable judge: `--judge anthropic-haiku` or `--judge ollama:<model>` (remote `OLLAMA_URL`) | paid |
+
+**Anything that would charge during ingest is a bug.** This is not a soft preference; the api enforces it.
+
+## 3-guard architecture (free by default)
+
+| Guard | Position | Tools | Goal |
+|---|---|---|---|
+| `guard_ingest` | per scraped page, before chunking | Prompt-Guard-2 + Presidio + size/type filter + cross-site-link strip | stop attacker-planted instructions and PII from poisoning the corpus |
+| `guard_query` | per chat message, before retrieval | Prompt-Guard-2 + Presidio + topic-scope cosine-vs-site-centroid + token-bucket rate limit | stop direct jailbreaks, scope drift, user-side PII leaks |
+| `guard_output` | post-LLM, before SSE flush | per-sentence faithfulness vs retrieved chunks (BGE-M3 cosine) + Detoxify + Presidio + citation integrity | catch hallucinations, toxic output, PII leaks, fake citations |
+
+Each returns `GuardResult { passed, severity: low|med|high, reasons[], redacted_text? }`. Severity ≥ high rejects the request; low/med logs and continues. The SSE `done` event includes a `guards` field so the widget can render a "moderated" badge and the audit can replay decisions.
+
+`GUARD_MODE=llm` in `.env` opts every guard into a paid Haiku second-pass for stricter checks.
+
+## Bilingual EN + ID
+
+- BGE-M3 is multilingual (100+ languages) — the same vector space serves both English and Bahasa Indonesia. Cross-lingual retrieval works (Indonesian question → English source chunks → Indonesian answer).
+- Widget UI strings live in `widget/src/i18n/{en.json,id.json}`. Locale resolves at runtime: `data-locale="id"` > `navigator.language` > `en`.
+- Chat system prompt instructs the LLM to mirror the user's question language. Citations always link to the source URL regardless of language.
+
+## Politeness controls (operator-tunable)
+
+Defaults are polite. Every switch can be overridden in `.env` or per-`/web2rag-ingest` call.
+
+| Knob | `.env` | CLI flag | Default |
+|---|---|---|---|
+| Honor robots.txt + `noindex`? | `RESPECT_ROBOTS_TXT` | `--force` (set false) | `true` |
+| Rate limit | `CRAWL_RATE_LIMIT` | `--rate N/<window>` | `10/60s` |
+| Max parallel fetches | `CRAWL_CONCURRENCY` | `--concurrency N` | `2` |
+| User-Agent | `CRAWL_USER_AGENT` | `--user-agent "..."` | modern Chrome UA |
+
+Override decisions are recorded in `reports/audit_<ts>.json` with the operator identity so intent stays traceable.
+
+## Repo layout
+
+```
+{{project_name}}/
+├── docker-compose.yml
+├── docker/Dockerfile.api
+├── server/                  FastAPI app
+│   ├── main.py              app entrypoint, /health
+│   ├── config.py            .env loader
+│   ├── models/              in-process embedder + reranker (sentence-transformers)
+│   ├── ingestion/           scraper, politeness, chunker, pipeline
+│   ├── retrieval/           rewrite, hybrid_search, rerank, prompt
+│   ├── llm/claude.py        Anthropic SDK + native Citations API (NO Ollama)
+│   ├── guards/              guard_ingest / guard_query / guard_output
+│   ├── store/chroma.py      single web_corpus collection + metadata schema
+│   └── api/                 chat.py, ingest.py, health.py, widget_assets.py
+├── eval/
+│   ├── judges/              factory: anthropic-haiku | ollama:<model>
+│   └── runners/             quality (RAGAS) / security (deepeval) / redteam (deepteam)
+├── widget/                  vanilla JS Web Component + Shadow DOM
+├── data/chroma/             vector store (gitignored)
+├── reports/                 audit outputs (gitignored)
+├── pyproject.toml
+├── .env.example             copy to .env, then run /web2rag-setup
+└── .gitignore
+```
+
+## Critical files (single source of truth)
+
+- `server/store/chroma.py` — citation metadata schema; everything reads/writes through this. See `references/citation-schema.md` in the plugin for field-level docs.
+- `server/llm/claude.py` — chat LLM. Reads `CHAT_MODEL`. Native Anthropic Citations API only.
+- `eval/judges/factory.py` — the `--judge X` swap. Used by all three audit runners.
+- `widget/src/widget.js` — Web Component definition. Theming via CSS custom properties only.
+
+## Inviolable rules
+
+1. **Ingest must be $0.** Anything that calls a paid API during `/ingest` is wrong.
+2. **Chat is Claude-only.** No Ollama-on-chat path. Native Citations API always used.
+3. **Eval judge is per-run.** Setting `--judge ollama:llama3.1` for ONE audit run does NOT change `CHAT_MODEL`.
+4. **Bilingual is first-class**, not a feature flag.
+5. **Politeness is operator-controlled** but every override is logged.
