@@ -32,7 +32,7 @@ from pydantic import BaseModel, Field
 from server.config import settings
 from server.guards.guard_query import guard_query
 from server.retrieval.hyde import generate_hypothetical
-from server.retrieval.prompt import SYSTEM_PROMPT, build_documents
+from server.retrieval.prompt import build_documents, build_system_prompt
 from server.retrieval.rerank import rerank
 from server.retrieval.search import hybrid_search
 from server.store.acronyms import load as load_acronyms, load_all as load_all_acronyms
@@ -120,7 +120,7 @@ async def retrieve(payload: RetrievePayload) -> dict[str, Any]:
         "language_detected": detect_language(payload.message),
         "guard_query": q_verdict.to_dict(),
         "blocked": False,
-        "system_prompt": SYSTEM_PROMPT,
+        "system_prompt": build_system_prompt(payload.site_id),
         "documents": documents,    # for the subagent prompt
         "chunks": chunks,          # for terminal display
         "retrieve_top_k_used": top_k,

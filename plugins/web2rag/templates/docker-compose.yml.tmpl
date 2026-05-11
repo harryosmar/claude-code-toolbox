@@ -39,6 +39,14 @@ services:
     volumes:
       - ./reports:/app/reports
       - ./eval/testsets:/app/eval/testsets
+      # Persist per-site state across container recreates: the auto-extracted
+      # acronym tables (data/acronyms/*.json), site config (data/sites.json),
+      # and production feedback (data/feedback.jsonl) all live here. Without
+      # this bind, every `docker compose up --force-recreate api` wipes the
+      # learned glossary and any post-ingest derivative state, which silently
+      # breaks BM25 acronym expansion + the synthetic glossary chunk lookup
+      # and forces an /update to re-extract.
+      - ./data:/app/data
       # Persist HuggingFace + sentence-transformers caches so BGE-M3 +
       # bge-reranker-v2-m3 + Prompt-Guard + toxic-bert + spacy models
       # download ONCE and survive container restarts. Without this, every

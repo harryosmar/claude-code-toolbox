@@ -28,7 +28,7 @@ from server.config import settings
 from server.guards.guard_output import filter_output
 from server.guards.guard_query import guard_query
 from server.llm.claude import stream_chat
-from server.retrieval.prompt import SYSTEM_PROMPT, build_documents
+from server.retrieval.prompt import build_documents, build_system_prompt
 from server.retrieval.rerank import rerank
 from server.retrieval.rewrite import decontextualize
 from server.retrieval.search import hybrid_search
@@ -83,7 +83,7 @@ async def chat(payload: ChatPayload) -> EventSourceResponse:
             user_message=message,
             history=payload.history,
             documents=documents,
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=build_system_prompt(payload.site_id),
             hits=hits,
         ):
             if evt["type"] == "token":

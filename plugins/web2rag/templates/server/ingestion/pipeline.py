@@ -22,6 +22,7 @@ from server.ingestion.normalize import normalize as normalize_markdown
 from server.ingestion.politeness import PolitenessPolicy
 from server.ingestion.scraper import ScrapedPage, crawl
 from server.models.embedder import embedder
+from server.retrieval.glossary import synthetic_chunk_metadata_kwargs, synthetic_chunk_text
 from server.retrieval.search import bump_corpus_generation
 from server.store.acronyms import merge as merge_acronyms
 from server.store.chroma import ChunkMetadata, delete_stale_for_url, upsert_chunks
@@ -193,6 +194,36 @@ async def run_ingest(req: IngestRequest) -> AsyncIterator[dict]:
         site_id_for_acros = urlparse(req.start_url).netloc
         progress.acronyms_learned = len(load_acronyms(site_id_for_acros))
 
+    # Synthetic glossary chunk — single derived chunk per site that carries
+    # the bilingual acronym table. Surfaces on retrieval whenever a user
+    # query mentions one of the corpus acronyms (BM25 catches the literal
+    # token; dense catches the bilingual lead paragraph). Removable via
+    # /web2rag-remove-site like any other chunk because it shares the
+    # site_id metadata key.
+    glossary_chunks_written = 0
+    if progress.pages_scraped:
+        from urllib.parse import urlparse
+        site_id_for_glossary = urlparse(req.start_url).netloc
+        glossary_text = synthetic_chunk_text(site_id_for_glossary, req.start_url)
+        if glossary_text:
+            glossary_meta_kwargs = synthetic_chunk_metadata_kwargs(site_id_for_glossary, batch_id)
+            glossary_meta = ChunkMetadata(**glossary_meta_kwargs)
+            glossary_embedding = embedder.embed([glossary_text])
+            upsert_chunks(
+                chunks=[glossary_text],
+                embeddings=glossary_embedding,
+                metadatas=[glossary_meta],
+            )
+            glossary_chunks_written = 1
+            progress.chunks_embedded += 1
+            bump_corpus_generation()
+            yield {
+                "type": "synthetic_glossary_emitted",
+                "site_id": site_id_for_glossary,
+                "source_url": glossary_meta.source_url,
+                "acronyms_in_glossary": progress.acronyms_learned,
+            }
+
     yield {
         "type": "done",
         "batch_id": batch_id,
@@ -201,5 +232,6 @@ async def run_ingest(req: IngestRequest) -> AsyncIterator[dict]:
         "chunks_embedded": progress.chunks_embedded,
         "chunks_deleted": progress.chunks_deleted,
         "acronyms_total": progress.acronyms_learned,
+        "synthetic_glossary_chunks": glossary_chunks_written,
         "guard_hits": progress.guard_hits,
     }

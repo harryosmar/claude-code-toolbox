@@ -48,8 +48,11 @@ dependencies = [
     # ─── step 6: guard_output toxicity scoring ───────────────────────────
     # NOTE: we don't depend on `detoxify` (PyPI) — it pins transformers<4.40
     # which conflicts with sentence-transformers>=3.2. We call its underlying
-    # model `unitary/toxic-bert` directly via transformers; same coverage,
-    # no version conflict.
+    # multilingual checkpoint `unitary/multilingual-toxic-xlm-roberta`
+    # directly via transformers; bilingual EN+ID coverage, no version conflict.
+    # sentencepiece is REQUIRED — XLM-RoBERTa's tokenizer uses a SentencePiece
+    # model and transformers refuses to load it without this dep present.
+    "sentencepiece>=0.2,<1",
 
     # ─── eval stack: DeepEval (correctness + capability) + DeepTeam (security)
     # We use DeepEval for the correctness AND capability axes, and DeepTeam

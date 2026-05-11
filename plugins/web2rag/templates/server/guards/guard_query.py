@@ -16,6 +16,7 @@ import time
 
 from server.config import settings
 from server.guards.base import GuardResult
+from server.guards.normalize_input import normalize_for_inspection
 from server.guards.presidio_engine import presidio
 from server.guards.prompt_guard import prompt_guard
 from server.models.embedder import embedder
@@ -28,7 +29,83 @@ log = logging.getLogger(__name__)
 
 def guard_query(message: str, *, site_id: str | None = None) -> GuardResult:
     reasons: list[str] = []
-    text = message
+
+    # --- 0. NORMALIZE INPUT + SUSPICIOUS-SHAPE CHECK ------------------------
+    # Decode base64/hex/morse/ROT13, strip zero-width + bidi, fold homoglyphs,
+    # de-leet, decode emoji cipher. Then feed the CANONICAL form to the
+    # classifier instead of the raw payload — surface-pattern classifiers
+    # cannot score what they cannot recognize.
+    #
+    # Policy: **suspicious until proven legitimate**. The mere presence of
+    # obfuscation surface (zero-width chars, bidi-override, base64-shaped
+    # blocks, homoglyph swaps, emoji ciphers) carries near-zero legitimate
+    # signal on a public-info corpus like a nutrition agency site. Decode
+    # success is NOT required to refuse — a base64-shaped block that
+    # decodes to random bytes is the most suspicious shape of all, signalling
+    # deliberate obfuscation rather than accidental encoding.
+    norm = normalize_for_inspection(message)
+    text = norm.canonical
+    input_was_normalized = bool(norm.transforms_applied)
+    if input_was_normalized:
+        reasons.append("normalized:" + ",".join(norm.transforms_applied))
+
+    # Hard refuse: zero-width / bidi-override characters have no legitimate
+    # use in chat. Trojan Source attacks exploit these to render one thing
+    # visually while sending another to the parser.
+    if norm.suspicion_signals.get("zero_width_or_bidi", 0) > 0:
+        return GuardResult(
+            passed=False,
+            severity="high",
+            reasons=[*reasons, f"obfuscation:zero_width_or_bidi:{norm.suspicion_signals['zero_width_or_bidi']}"],
+        )
+
+    # Hard refuse: morse[text] has no legitimate use in a public-info chat
+    # corpus. Unlike base64 (which appears in legit JWT / API questions),
+    # morse[…] never shows up in benign traffic, and when the decoder does
+    # succeed the decoded substring is usually too short for the downstream
+    # classifier to flag — single-category soft-warn lets the injection
+    # through. Treat the morse surface itself as the refusal signal.
+    if norm.suspicion_signals.get("morse_block", 0) > 0:
+        return GuardResult(
+            passed=False,
+            severity="high",
+            reasons=[*reasons, f"obfuscation:morse_block:{norm.suspicion_signals['morse_block']}"],
+        )
+
+    # Hard refuse: a single block of base64/hex that DIDN'T decode to
+    # plausible text. Looks-like-encoded-but-isn't is the deliberate-obfuscation
+    # signature — legitimate users don't send entropy walls to a nutrition bot.
+    # (morse_undecodable is already covered by the morse_block check above.)
+    undecodable_hits = sum(
+        norm.suspicion_signals.get(k, 0)
+        for k in ("base64_undecodable", "hex_undecodable")
+    )
+    if undecodable_hits >= 1:
+        return GuardResult(
+            passed=False,
+            severity="high",
+            reasons=[*reasons, f"obfuscation:undecodable_block:{undecodable_hits}"],
+        )
+
+    # Hard refuse: two or more distinct obfuscation categories present. A
+    # single base64 paste might be legitimate ("what is this JWT?"); a base64
+    # paste AND homoglyph swaps AND emoji cipher in one message is not.
+    obfuscation_categories = sum(
+        1 for k in ("homoglyph", "emoji_cipher", "base64_block", "hex_block", "morse_block", "rot13", "leetspeak")
+        if norm.suspicion_signals.get(k, 0) > 0
+    )
+    if obfuscation_categories >= 2:
+        return GuardResult(
+            passed=False,
+            severity="high",
+            reasons=[*reasons, f"obfuscation:multi_category:{obfuscation_categories}:{sorted(norm.suspicion_signals)}"],
+        )
+
+    # Soft flag: any single obfuscation category is present but isolated. We
+    # continue with the canonical form fed to the downstream classifier; the
+    # signal is logged so an audit run can spot drift.
+    if obfuscation_categories == 1:
+        reasons.append("obfuscation_warn:" + ",".join(f"{k}:{v}" for k, v in norm.suspicion_signals.items()))
 
     # --- 1. prompt-injection (language-gated, see config rationale) ---------
     lang = detect_language(text)
@@ -38,7 +115,7 @@ def guard_query(message: str, *, site_id: str | None = None) -> GuardResult:
             return GuardResult(
                 passed=False,
                 severity="high",
-                reasons=[f"prompt_injection:{injection_score:.2f}"],
+                reasons=[*reasons, f"prompt_injection:{injection_score:.2f}"],
             )
         if injection_score >= prompt_guard.med_threshold:
             reasons.append(f"prompt_injection_warn:{injection_score:.2f}")
@@ -72,7 +149,7 @@ def guard_query(message: str, *, site_id: str | None = None) -> GuardResult:
                 passed=False,
                 severity="med",
                 reasons=[*reasons, f"scope_drift:{sim:.2f}"],
-                redacted_text=text if scrub.entities else None,
+                redacted_text=text if (scrub.entities or input_was_normalized) else None,
             )
 
     return GuardResult(

@@ -1,12 +1,16 @@
-"""Toxicity scorer — `unitary/toxic-bert` via transformers directly.
+"""Toxicity scorer — `unitary/multilingual-toxic-xlm-roberta` via transformers directly.
 
 Why not the `detoxify` PyPI package: it pins `transformers<4.40` which
-conflicts with sentence-transformers >= 3.2. We use the same Jigsaw model
-detoxify wraps (`unitary/toxic-bert`) but call transformers directly so
+conflicts with sentence-transformers >= 3.2. We use detoxify's multilingual
+checkpoint (`unitary/multilingual-toxic-xlm-roberta`, XLM-RoBERTa base
+fine-tuned on Jigsaw multilingual) but call transformers directly so
 we can keep both libraries on the same modern transformers version.
 
-The label set matches detoxify's: toxicity, severe_toxicity, obscene,
-threat, insult, identity_attack — all probabilities in [0,1].
+Bahasa Indonesia is in-distribution for this checkpoint (XLM-R covers ID
+natively); the older `unitary/toxic-bert` is English-only and unsafe for
+ID-primary corpora. Label set is the detoxify-standard 6-way:
+toxicity, severe_toxicity, obscene, threat, insult, identity_attack — all
+probabilities in [0,1].
 """
 from __future__ import annotations
 
@@ -21,7 +25,7 @@ log = logging.getLogger(__name__)
 
 
 class _Detoxify:
-    name = "unitary/toxic-bert"
+    name = "unitary/multilingual-toxic-xlm-roberta"
 
     @property
     def threshold(self) -> float:
