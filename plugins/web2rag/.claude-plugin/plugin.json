@@ -1,6 +1,6 @@
 {
   "name": "web2rag",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Scaffolder plugin that turns any website into a self-hosted RAG chatbot with an embeddable widget. Generates a sibling project containing a docker-compose stack (FastAPI + Chroma), in-process bilingual (EN+ID) BGE-M3 embeddings, a 3-layer guard architecture (guard_ingest / guard_query / guard_output), Claude-powered chat with native Citations API, switchable eval judges (Anthropic Haiku or remote Ollama) for RAGAS / deepeval / deepteam, and an embeddable Web Component widget. Mirrors the peruri-go-scaffolder model: the plugin produces independent customer projects.",
   "author": {
     "name": "Harry"

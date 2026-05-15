@@ -9,9 +9,19 @@ HyDE could plug in here too in a follow-up; we keep the surface stable.
 """
 from __future__ import annotations
 
+from functools import lru_cache
+
 from anthropic import AsyncAnthropic
 
 from server.config import settings
+
+
+@lru_cache(maxsize=1)
+def _client() -> AsyncAnthropic:
+    """Module-level AsyncAnthropic singleton — same rationale as
+    server.llm.claude._client. Lazy via lru_cache so the empty-API-key
+    case stays caught by the chat.py 503 gate."""
+    return AsyncAnthropic(api_key=settings.anthropic_api_key)
 
 
 _REWRITE_SYSTEM = (
@@ -33,7 +43,7 @@ async def decontextualize(message: str, history: list[dict]) -> str:
     convo = "\n".join(f"{turn['role']}: {turn['content']}" for turn in history[-6:])
     user = f"Previous turns:\n{convo}\n\nLast message: {message}\n\nRewrite the last message as a self-contained query."
 
-    client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+    client = _client()
     resp = await client.messages.create(
         model=settings.chat_model,
         max_tokens=settings.rewrite_max_tokens,

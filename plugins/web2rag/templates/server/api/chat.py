@@ -20,6 +20,7 @@ import json
 import logging
 from typing import AsyncIterator
 
+import anthropic
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
@@ -76,23 +77,57 @@ async def chat(payload: ChatPayload) -> EventSourceResponse:
         documents = build_documents(hits)
 
         # ── stream from Claude (live tokens) ────────────────────────────────
+        # Anthropic errors surface mid-stream — emit a structured SSE error
+        # event so the widget can render a retry affordance instead of
+        # silently dropping the connection. Typed exception hierarchy:
+        # transient (rate_limit / overloaded) is retryable, connection is
+        # network-side, APIStatusError is the everything-else catchall.
         buffered_text = ""
         raw_citations: list[dict] = []
         usage: dict = {}
-        async for evt in stream_chat(
-            user_message=message,
-            history=payload.history,
-            documents=documents,
-            system_prompt=build_system_prompt(payload.site_id),
-            hits=hits,
-        ):
-            if evt["type"] == "token":
-                buffered_text += evt["text"]
-                yield {"event": "token", "data": json.dumps(evt)}
-            elif evt["type"] == "citations":
-                raw_citations = evt.get("citations", [])
-            elif evt["type"] == "done":
-                usage = evt.get("usage", {})
+        try:
+            async for evt in stream_chat(
+                user_message=message,
+                history=payload.history,
+                documents=documents,
+                system_prompt=build_system_prompt(payload.site_id),
+                hits=hits,
+            ):
+                if evt["type"] == "token":
+                    buffered_text += evt["text"]
+                    yield {"event": "token", "data": json.dumps(evt)}
+                elif evt["type"] == "citations":
+                    raw_citations = evt.get("citations", [])
+                elif evt["type"] == "done":
+                    usage = evt.get("usage", {})
+        except anthropic.RateLimitError as e:
+            log.warning("anthropic rate limit during /chat: %s", e)
+            yield {"event": "error", "data": json.dumps({
+                "type": "error",
+                "code": "transient",
+                "message": "The chatbot is temporarily busy. Please try again in a moment.",
+            })}
+            return
+        except (anthropic.APIConnectionError, anthropic.APITimeoutError) as e:
+            log.warning("anthropic connection error during /chat: %s", e)
+            yield {"event": "error", "data": json.dumps({
+                "type": "error",
+                "code": "connection",
+                "message": "Could not reach the chatbot service. Please try again.",
+            })}
+            return
+        except anthropic.APIStatusError as e:
+            # 529 (Overloaded) is functionally transient — the pinned SDK
+            # (<0.50) does not expose a dedicated OverloadedError class,
+            # so we branch on status_code instead.
+            if e.status_code == 529:
+                log.warning("anthropic overloaded during /chat: %s", e)
+                code, message = "transient", "The chatbot is temporarily busy. Please try again in a moment."
+            else:
+                log.exception("anthropic api error during /chat (status=%s)", e.status_code)
+                code, message = "api", "The chatbot service returned an error. Please try again later."
+            yield {"event": "error", "data": json.dumps({"type": "error", "code": code, "message": message})}
+            return
 
         # ── guard_output (post-stream) ──────────────────────────────────────
         out_verdict, final_answer, final_citations = filter_output(

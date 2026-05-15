@@ -10,6 +10,7 @@ but that's a separate code path used only by /audit.
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
 from typing import Any, AsyncIterator
 
 from anthropic import AsyncAnthropic
@@ -18,6 +19,18 @@ from server.config import settings
 from server.retrieval.search import Hit
 
 log = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=1)
+def _client() -> AsyncAnthropic:
+    """Module-level AsyncAnthropic singleton.
+
+    Why: each AsyncAnthropic() builds its own httpx pool — re-creating it
+    per /chat request burns a TLS handshake per turn and discards any
+    HTTP/2 connection reuse. Lazy via lru_cache so the empty-API-key case
+    is still caught by chat.py's 503 gate before construction runs.
+    """
+    return AsyncAnthropic(api_key=settings.anthropic_api_key)
 
 
 async def stream_chat(
@@ -34,7 +47,7 @@ async def stream_chat(
     `documents` are the DocumentBlockParam list built by retrieval/prompt.py.
     `hits` lets us hydrate citations with their source_url after the stream.
     """
-    client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+    client = _client()
 
     # Combine documents + the user's question as one user-turn content array.
     messages: list[dict] = list(history) + [
