@@ -28,8 +28,22 @@ class Settings(BaseSettings):
     # ─── chat LLM ────────────────────────────────────────────────────────────
     anthropic_api_key: str = Field(default="", validation_alias="ANTHROPIC_API_KEY")
     chat_model: ChatModel = Field(default="claude-haiku-4-5-20251001", validation_alias="CHAT_MODEL")
-    chat_max_tokens: int = Field(default=1024, validation_alias="CHAT_MAX_TOKENS")
+    # 2048 (default) is double the older 1024 ceiling — streaming has no
+    # HTTP-timeout cost, the system prompt already enforces concision, and
+    # the extra headroom prevents mid-thought truncation on listy / multi-
+    # part answers. Bump higher if the corpus produces frequently long
+    # answers; lower (e.g. 512) only when bounding worst-case cost matters
+    # more than completing the occasional long answer.
+    chat_max_tokens: int = Field(default=2048, validation_alias="CHAT_MAX_TOKENS")
     rewrite_max_tokens: int = Field(default=256, validation_alias="REWRITE_MAX_TOKENS")
+    # Opt-in adaptive thinking — Claude decides per-request when and how
+    # much to reason before answering. Quality boost on complex / multi-hop
+    # questions, costs extra output tokens. Only fires when the model also
+    # supports it (Opus 4.7/4.6 + Sonnet 4.6 today); Haiku 4.5 silently
+    # falls back to no-thinking. Default true: cost increase is bounded by
+    # max_tokens, and the cost/quality trade is favourable for RAG. Flip to
+    # false to bound spend or for latency-sensitive deployments.
+    chat_adaptive_thinking: bool = Field(default=True, validation_alias="CHAT_ADAPTIVE_THINKING")
 
     # ─── eval judge ──────────────────────────────────────────────────────────
     ollama_url: str = Field(default="", validation_alias="OLLAMA_URL")
