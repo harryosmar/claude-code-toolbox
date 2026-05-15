@@ -18,9 +18,16 @@ import logging
 from functools import lru_cache
 from typing import Any, AsyncIterator
 
+import anthropic
 from anthropic import AsyncAnthropic
 
 from server.config import settings
+from server.llm.errors import (
+    LLMAuthError,
+    LLMConnectionError,
+    LLMStatusError,
+    LLMTransientError,
+)
 from server.llm.ports import (
     ChatCitationEvent,
     ChatDoneEvent,
@@ -71,6 +78,54 @@ _ADAPTIVE_THINKING_MODELS: frozenset[str] = frozenset({
 
 def _adaptive_enabled_for(model: str) -> bool:
     return model in _ADAPTIVE_THINKING_MODELS
+
+
+# ─── exception translation ───────────────────────────────────────────────────
+# Translates anthropic.* SDK exceptions to the domain hierarchy in
+# server/llm/errors.py so consumers (chat.py, audit.py) can catch one set
+# of types regardless of which adapter is active. Lands in 0.5.0 — the
+# 0.4.0 release kept chat.py catching anthropic.* directly because
+# abstracting from a single example would have been speculative.
+
+
+def _translate(e: Exception) -> Exception:
+    """Map an anthropic.* exception to the right domain exception.
+
+    Caller does ``raise _translate(e) from e`` so the original exception
+    is preserved on ``__cause__`` for forensic inspection.
+    """
+    if isinstance(e, anthropic.RateLimitError):
+        return LLMTransientError(f"anthropic rate limit (429): {e}", cause=e)
+    if isinstance(e, anthropic.APIStatusError):
+        status = getattr(e, "status_code", None)
+        if status == 529:
+            return LLMTransientError(f"anthropic overloaded (529): {e}", cause=e)
+        if status in (401, 403):
+            return LLMAuthError(
+                f"anthropic auth/permission failure ({status}): {e}",
+                status_code=status,
+                cause=e,
+            )
+        return LLMStatusError(
+            f"anthropic api error (status={status}): {e}",
+            status_code=status,
+            cause=e,
+        )
+    if isinstance(e, (anthropic.APIConnectionError, anthropic.APITimeoutError)):
+        return LLMConnectionError(f"anthropic transport error: {e}", cause=e)
+    # Default: wrap unknown anthropic.* errors as a generic LLMStatusError so
+    # consumers always see a domain type, never a leaked SDK exception.
+    return LLMStatusError(f"unexpected anthropic error: {type(e).__name__}: {e}", cause=e)
+
+
+# Tuple used in try/except clauses to catch every anthropic.* exception type
+# we know how to translate. Anything else falls through naturally.
+_ANTHROPIC_EXCEPTIONS: tuple[type[Exception], ...] = (
+    anthropic.RateLimitError,
+    anthropic.APIStatusError,
+    anthropic.APIConnectionError,
+    anthropic.APITimeoutError,
+)
 
 
 # ─── capability dataclasses (module-level constants, shared across instances) ─
@@ -168,36 +223,44 @@ class AnthropicChatAdapter:
         if enable_adaptive_thinking and _adaptive_enabled_for(model):
             stream_kwargs["thinking"] = {"type": "adaptive"}
 
-        async with client.messages.stream(**stream_kwargs) as stream:
-            async for event in stream:
-                t = getattr(event, "type", None)
-                if t != "content_block_delta":
-                    continue
-                delta = getattr(event, "delta", None)
-                if delta is None:
-                    continue
-                # text_delta → token; citations_delta → citation event;
-                # thinking_delta deliberately dropped (the widget displays
-                # answers, not reasoning traces).
-                dtype = getattr(delta, "type", None)
-                if dtype == "text_delta":
-                    text = getattr(delta, "text", "") or ""
-                    if text:
-                        yield ChatTokenEvent(text=text)
-                elif dtype == "citations_delta":
-                    raw = getattr(delta, "citation", None)
-                    if raw is None:
+        # All anthropic.* exceptions translate to the domain hierarchy. The
+        # try/except wraps the whole stream — including the async for loop —
+        # so a mid-stream failure (rate limit hit during long generation,
+        # connection drop) surfaces as a domain LLM* exception, not a raw
+        # SDK type. Consumers (chat.py, audit.py) catch domain types only.
+        try:
+            async with client.messages.stream(**stream_kwargs) as stream:
+                async for event in stream:
+                    t = getattr(event, "type", None)
+                    if t != "content_block_delta":
                         continue
-                    yield ChatCitationEvent(
-                        citation=PortCitation(
-                            document_index=getattr(raw, "document_index", -1),
-                            cited_text=getattr(raw, "cited_text", "") or "",
-                            start_char_index=getattr(raw, "start_char_index", None),
-                            end_char_index=getattr(raw, "end_char_index", None),
+                    delta = getattr(event, "delta", None)
+                    if delta is None:
+                        continue
+                    # text_delta → token; citations_delta → citation event;
+                    # thinking_delta deliberately dropped (the widget displays
+                    # answers, not reasoning traces).
+                    dtype = getattr(delta, "type", None)
+                    if dtype == "text_delta":
+                        text = getattr(delta, "text", "") or ""
+                        if text:
+                            yield ChatTokenEvent(text=text)
+                    elif dtype == "citations_delta":
+                        raw = getattr(delta, "citation", None)
+                        if raw is None:
+                            continue
+                        yield ChatCitationEvent(
+                            citation=PortCitation(
+                                document_index=getattr(raw, "document_index", -1),
+                                cited_text=getattr(raw, "cited_text", "") or "",
+                                start_char_index=getattr(raw, "start_char_index", None),
+                                end_char_index=getattr(raw, "end_char_index", None),
+                            )
                         )
-                    )
 
-            final = await stream.get_final_message()
+                final = await stream.get_final_message()
+        except _ANTHROPIC_EXCEPTIONS as e:
+            raise _translate(e) from e
 
         # Map the SDK's usage into LLMUsage. Anthropic-specific counters
         # (cache_creation / cache_read) go into provider_extras so the
@@ -240,12 +303,15 @@ class AnthropicRewriteAdapter:
         model: str,
     ) -> str:
         client = _get_rewrite_client()
-        resp = await client.messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-        )
+        try:
+            resp = await client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": user}],
+            )
+        except _ANTHROPIC_EXCEPTIONS as e:
+            raise _translate(e) from e
         # Anthropic's content is a list of blocks; we want concatenated text.
         # The current rewrite path is built on the same pattern in rewrite.py.
         parts: list[str] = []

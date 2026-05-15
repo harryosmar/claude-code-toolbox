@@ -20,11 +20,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ChatModel = Literal["claude-sonnet-4-6", "claude-haiku-4-5-20251001"]
 PromptGuardBackend = Literal["local", "anthropic"]
-# LLM provider for /chat and rewrite. 0.4.0 ships only "anthropic". 0.5.0 will
-# widen this to Literal["anthropic", "openai-compat"]; the env var is already
-# wired so generated projects scaffolded against 0.4.0 don't need a config
-# migration when 0.5.0 lands — they keep working unchanged.
-LLMProvider = Literal["anthropic"]
+# LLM provider for /chat and rewrite. As of 0.5.0 two providers are supported:
+#   - "anthropic"     — AnthropicChatAdapter / AnthropicRewriteAdapter; native
+#                       Citations API, DocumentBlockParam, adaptive thinking,
+#                       prompt cache_control.
+#   - "openai-compat" — OpenAICompatChatAdapter / OpenAICompatRewriteAdapter;
+#                       targets OpenAI, vLLM, Ollama OpenAI-mode, LiteLLM,
+#                       Together, Groq, etc. Citations gracefully degrade to
+#                       an empty list (citation_mode="unavailable" in done
+#                       event); documents flattened into the system prompt.
+# Per-port overrides ``LLM_CHAT_PROVIDER`` and ``LLM_REWRITE_PROVIDER`` let
+# operators run mixed-provider configs.
+LLMProvider = Literal["anthropic", "openai-compat"]
 
 
 class Settings(BaseSettings):
@@ -32,19 +39,32 @@ class Settings(BaseSettings):
 
     # ─── chat LLM ────────────────────────────────────────────────────────────
     anthropic_api_key: str = Field(default="", validation_alias="ANTHROPIC_API_KEY")
-    # LLM provider routes /chat and rewrite to a specific adapter. 0.4.0
-    # ships only "anthropic" (full Citations API + adaptive thinking +
-    # prompt cache_control). 0.5.0 widens this to "openai-compat" (works
-    # with OpenAI, vLLM, Ollama OpenAI mode, LiteLLM proxies, etc. —
-    # citations gracefully degrade). See plugins/web2rag/CLAUDE.md
-    # capability matrix for the trade-offs.
+    # LLM provider — global default. Each port also honors a per-port
+    # override below (LLM_CHAT_PROVIDER, LLM_REWRITE_PROVIDER) so operators
+    # can mix providers (chat on local vLLM, rewrite on managed Anthropic
+    # Haiku, etc.). See plugins/web2rag/CLAUDE.md for the capability matrix.
     llm_provider: LLMProvider = Field(default="anthropic", validation_alias="LLM_PROVIDER")
+    # Per-port overrides — empty string means "fall back to llm_provider".
+    # Type is plain str (not Literal) because the factory does its own
+    # validation and the override-emptiness pattern needs free-form input.
+    llm_chat_provider: str = Field(default="", validation_alias="LLM_CHAT_PROVIDER")
+    llm_rewrite_provider: str = Field(default="", validation_alias="LLM_REWRITE_PROVIDER")
     chat_model: ChatModel = Field(default="claude-haiku-4-5-20251001", validation_alias="CHAT_MODEL")
     # Empty string → fall back to chat_model. Useful when chat uses a heavy
     # model (Sonnet/Opus) but rewrite — a cheap ~256-token call — should pin
-    # to Haiku. Also lets operators in 0.5.0 keep rewrite on Anthropic Haiku
-    # even when chat moves to OpenAI/vLLM, without forcing a migration.
+    # to Haiku. Also lets operators keep rewrite on Anthropic Haiku even
+    # when chat moves to OpenAI/vLLM, without forcing a migration.
     rewrite_model: str = Field(default="", validation_alias="REWRITE_MODEL")
+    # OpenAI-compat backend config. Required when llm_provider="openai-compat"
+    # or when any per-port override resolves to it. Empty values surface as
+    # actionable errors at request time (LLMStatusError with an explanation
+    # message), not at startup — so a deployment that uses only the
+    # Anthropic adapter doesn't need any of these set.
+    openai_api_key: str = Field(default="", validation_alias="OPENAI_API_KEY")
+    openai_base_url: str = Field(default="", validation_alias="OPENAI_BASE_URL")
+    openai_chat_model: str = Field(default="", validation_alias="OPENAI_CHAT_MODEL")
+    # Optional override; empty → openai_chat_model.
+    openai_rewrite_model: str = Field(default="", validation_alias="OPENAI_REWRITE_MODEL")
     # 2048 (default) is double the older 1024 ceiling — streaming has no
     # HTTP-timeout cost, the system prompt already enforces concision, and
     # the extra headroom prevents mid-thought truncation on listy / multi-

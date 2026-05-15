@@ -43,6 +43,11 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 
+# Pin the provider to anthropic so this test isn't affected by env left over
+# from a previous test run (the openai-compat test sets LLM_PROVIDER=openai-compat).
+os.environ["LLM_PROVIDER"] = "anthropic"
+
+
 # ─── canned Anthropic SDK event sequence ──────────────────────────────────────
 # Reproduces what a successful 2-token, 2-citation response looks like coming
 # out of ``client.messages.stream``. The duck-typed objects only carry the
@@ -169,6 +174,10 @@ EXPECTED_EVENTS: list[dict[str, Any]] = [
         },
         "answer_chars": len("Hello ") + len("world."),
         "model": "claude-haiku-4-5-20251001",  # default chat_model
+        # Added in 0.5.0 — Anthropic adapter declares native citation
+        # support, so the orchestrator emits "native" here. OpenAI-compat
+        # path emits "unavailable" (covered in test_openai_compat_port_fidelity.py).
+        "citation_mode": "native",
     },
 ]
 
@@ -202,6 +211,16 @@ async def _run_stream_chat_collected() -> list[dict[str, Any]]:
             score=0.8,
         ),
     ]
+
+    # Rebuild settings so the LLM_PROVIDER env we set at module-top takes
+    # effect (Settings reads env at construction time). Clear factory
+    # lru_caches so any cached adapter from a previous run is dropped.
+    from server.config import Settings  # noqa: WPS433
+    import server.config as _config_mod  # noqa: WPS433
+    _config_mod.settings = Settings()
+    from server.llm import factory  # noqa: WPS433
+    factory.chat_port.cache_clear()
+    factory.rewrite_port.cache_clear()
 
     # Patch the Anthropic client at the adapter boundary so any
     # ``_get_chat_client()`` call inside ``AnthropicChatAdapter.stream_chat``

@@ -83,12 +83,23 @@ async def stream_chat(
         "citations": _hydrate(raw_citations, hits=hits),
     }
 
-    # Flatten LLMUsage into the public SSE shape. The two cache counters
-    # are top-level inside ``usage`` (not nested under provider_extras) so
-    # the wire format stays byte-identical to pre-0.4.0. Non-Anthropic
-    # adapters (0.5.0) populate provider_extras differently — any keys the
-    # adapter set come through; missing cache counters default to 0.
+    # Flatten LLMUsage into the public SSE shape. The two Anthropic cache
+    # counters are top-level inside ``usage`` (not nested) so the wire shape
+    # stays byte-identical to pre-0.4.0 on the Anthropic path. Non-Anthropic
+    # adapters populate provider_extras with their own counters (e.g.
+    # OpenAI's ``prompt_cache_tokens``) — those don't surface on the wire
+    # today; operators can read them off ``/health`` capability metadata
+    # and the ``stream_chat`` return value for debugging.
     extras: dict[str, int] = final_usage.provider_extras if final_usage else {}
+    caps = port.capabilities
+    # citation_mode tells the widget how to render the source panel:
+    # "native" — char-level citations present (Anthropic); the citations
+    # list has hydrated entries with char_start/char_end offsets.
+    # "unavailable" — adapter doesn't support citations; the list is empty
+    # and the widget should show "sources hidden" or hide the panel.
+    # New field in 0.5.0 — additive; widgets that ignore unknown fields
+    # keep working unchanged.
+    citation_mode = "native" if caps.supports_native_citations else "unavailable"
     yield {
         "type": "done",
         "usage": {
@@ -99,6 +110,7 @@ async def stream_chat(
         },
         "answer_chars": answer_chars,
         "model": settings.chat_model,
+        "citation_mode": citation_mode,
     }
 
 

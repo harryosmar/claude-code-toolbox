@@ -20,10 +20,16 @@ import json
 import logging
 from typing import AsyncIterator
 
-import anthropic
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
+
+from server.llm.errors import (
+    LLMAuthError,
+    LLMConnectionError,
+    LLMStatusError,
+    LLMTransientError,
+)
 
 from server.config import settings
 from server.guards.guard_output import filter_output
@@ -100,33 +106,48 @@ async def chat(payload: ChatPayload) -> EventSourceResponse:
                     raw_citations = evt.get("citations", [])
                 elif evt["type"] == "done":
                     usage = evt.get("usage", {})
-        except anthropic.RateLimitError as e:
-            log.warning("anthropic rate limit during /chat: %s", e)
+        except LLMTransientError as e:
+            # Rate limit / overload — adapter-agnostic. Anthropic 429/529 +
+            # OpenAI-compat 429/529 both map here. Widget shows "try again
+            # in a moment" / retry button; no operator action needed.
+            log.warning("LLM transient error during /chat: %s", e)
             yield {"event": "error", "data": json.dumps({
                 "type": "error",
                 "code": "transient",
                 "message": "The chatbot is temporarily busy. Please try again in a moment.",
             })}
             return
-        except (anthropic.APIConnectionError, anthropic.APITimeoutError) as e:
-            log.warning("anthropic connection error during /chat: %s", e)
+        except LLMConnectionError as e:
+            # Network-side failure — DNS, TCP refused, read timeout, mid-stream
+            # drop. Could be on the user's side OR the operator's egress.
+            log.warning("LLM connection error during /chat: %s", e)
             yield {"event": "error", "data": json.dumps({
                 "type": "error",
                 "code": "connection",
                 "message": "Could not reach the chatbot service. Please try again.",
             })}
             return
-        except anthropic.APIStatusError as e:
-            # 529 (Overloaded) is functionally transient — the pinned SDK
-            # (<0.50) does not expose a dedicated OverloadedError class,
-            # so we branch on status_code instead.
-            if e.status_code == 529:
-                log.warning("anthropic overloaded during /chat: %s", e)
-                code, message = "transient", "The chatbot is temporarily busy. Please try again in a moment."
-            else:
-                log.exception("anthropic api error during /chat (status=%s)", e.status_code)
-                code, message = "api", "The chatbot service returned an error. Please try again later."
-            yield {"event": "error", "data": json.dumps({"type": "error", "code": code, "message": message})}
+        except LLMAuthError as e:
+            # Operator-fixable — bad/expired key, billing issue, model access
+            # denied. Distinct SSE error code so the widget can surface a
+            # config-error UI rather than the usual "try again" prompt.
+            log.exception("LLM auth error during /chat (status=%s)", e.status_code)
+            yield {"event": "error", "data": json.dumps({
+                "type": "error",
+                "code": "auth",
+                "message": "The chatbot service is not authenticated. Operator must update the API key.",
+            })}
+            return
+        except LLMStatusError as e:
+            # Everything else — unexpected 4xx/5xx, malformed responses,
+            # missing config (e.g. OPENAI_BASE_URL empty on openai-compat).
+            # Log full traceback for operator triage.
+            log.exception("LLM api error during /chat (status=%s)", e.status_code)
+            yield {"event": "error", "data": json.dumps({
+                "type": "error",
+                "code": "api",
+                "message": "The chatbot service returned an error. Please try again later.",
+            })}
             return
 
         # ── guard_output (post-stream) ──────────────────────────────────────
