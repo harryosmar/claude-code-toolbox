@@ -1,53 +1,37 @@
-"""Claude chat — Anthropic SDK + native Citations API + SSE streaming.
+"""Chat orchestrator — keeps the ``stream_chat`` public symbol while routing
+the actual LLM call through ``server.llm.factory.chat_port()``.
 
-This is the ONLY chat-LLM path in the api. There's no Ollama fallback for
-chat: that simplification removes the need for manual citation extraction
-and keeps the system prompt + response shape uniform.
+This module used to wrap the Anthropic SDK directly. Since 0.4.0 the
+provider-specific logic lives in ``server.llm.adapters.anthropic_adapter``;
+this file is now ~50 LOC of orchestration:
 
-The eval-judge factory (eval/judges/factory.py) does support remote Ollama,
-but that's a separate code path used only by /audit.
+    1. Build the conversation: history + current user turn (string content).
+    2. Call ``chat_port().stream_chat(...)`` with the port-shape inputs.
+    3. Marshal ``ChatEvent`` instances back into the SSE-shaped dicts that
+       ``server/api/chat.py`` and ``server/api/audit.py`` already consume.
+
+The public signature is intentionally identical to pre-0.4.0 so the two
+consumers (chat.py, audit.py) are zero-diff. The wire format of the emitted
+SSE dicts (``token`` / ``citations`` / ``done``) is also byte-identical to
+pre-0.4.0 — guaranteed by ``tests/test_chat_port_fidelity.py``.
 """
 from __future__ import annotations
 
 import logging
-from functools import lru_cache
 from typing import Any, AsyncIterator
 
-from anthropic import AsyncAnthropic
-
 from server.config import settings
+from server.llm.factory import chat_port
+from server.llm.ports import (
+    ChatCitationEvent,
+    ChatDoneEvent,
+    ChatTokenEvent,
+    LLMUsage,
+    PortCitation,
+)
 from server.retrieval.search import Hit
 
 log = logging.getLogger(__name__)
-
-
-@lru_cache(maxsize=1)
-def _client() -> AsyncAnthropic:
-    """Module-level AsyncAnthropic singleton.
-
-    Why: each AsyncAnthropic() builds its own httpx pool — re-creating it
-    per /chat request burns a TLS handshake per turn and discards any
-    HTTP/2 connection reuse. Lazy via lru_cache so the empty-API-key case
-    is still caught by chat.py's 503 gate before construction runs.
-    """
-    return AsyncAnthropic(api_key=settings.anthropic_api_key)
-
-
-# Explicit registry of models that accept `thinking: {"type": "adaptive"}`.
-# Audited as of model release; bump when Anthropic ships new Claude 4.6+
-# models. Static frozenset (not startswith / regex) so a future model ID
-# we haven't tested against can't silently opt-in. Haiku 4.5 is excluded —
-# it 400s on adaptive thinking, and the cost/latency profile of Haiku is
-# the wrong target for a thinking budget anyway.
-_ADAPTIVE_THINKING_MODELS: frozenset[str] = frozenset({
-    "claude-opus-4-7",
-    "claude-opus-4-6",
-    "claude-sonnet-4-6",
-})
-
-
-def _adaptive_enabled_for(model: str) -> bool:
-    return model in _ADAPTIVE_THINKING_MODELS
 
 
 async def stream_chat(
@@ -60,132 +44,94 @@ async def stream_chat(
 ) -> AsyncIterator[dict]:
     """Yield SSE-shaped events: token, citations, done.
 
-    `history` is the prior turns (excluding the current user_message).
-    `documents` are the DocumentBlockParam list built by retrieval/prompt.py.
-    `hits` lets us hydrate citations with their source_url after the stream.
+    Same public contract as pre-0.4.0. ``history`` is the prior turns
+    (excluding the current user_message). ``documents`` are the
+    DocumentBlockParam dicts built by retrieval/prompt.py. ``hits`` lets
+    us hydrate citations with their source_url after the stream.
     """
-    client = _client()
+    port = chat_port()
 
-    # Combine documents + the user's question as one user-turn content array.
-    messages: list[dict] = list(history) + [
-        {
-            "role": "user",
-            "content": [
-                *documents,
-                {"type": "text", "text": user_message},
-            ],
-        }
+    # Build messages in port shape: history + current user turn, content as
+    # strings. The adapter splices ``documents`` into the last user turn.
+    port_messages: list[dict] = list(history) + [
+        {"role": "user", "content": user_message},
     ]
 
+    raw_citations: list[PortCitation] = []  # buffered, hydrated post-stream
     answer_chars = 0
-    raw_citations: list[dict] = []  # accumulated, returned after streaming
+    final_usage: LLMUsage | None = None
 
-    # System prompt is sent as a single text block with cache_control so the
-    # per-site preamble (base instructions + glossary) caches across turns.
-    # Prefix-match caching: the breakpoint covers everything before it in the
-    # render order (tools → system → messages); there are no tools here, so
-    # the cached prefix is exactly the system block. Below the model's
-    # minimum cacheable prefix (Haiku 4.5: 4096 tokens, Sonnet 4.6: 2048),
-    # the API silently no-ops — adding the marker is a free option that
-    # starts paying off as soon as glossaries grow large enough.
-    stream_kwargs: dict[str, Any] = {
-        "model": settings.chat_model,
-        "max_tokens": settings.chat_max_tokens,
-        "system": [
-            {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}},
-        ],
-        "messages": messages,
-    }
-    # Opt-in adaptive thinking, gated on both the operator flag AND the
-    # model's capability. Pre-checked against an audited registry instead of
-    # try/catching a 400 — Haiku 4.5 rejects this param, so a blind try
-    # would burn one failed roundtrip per request on the default chat model.
-    if settings.chat_adaptive_thinking and _adaptive_enabled_for(settings.chat_model):
-        stream_kwargs["thinking"] = {"type": "adaptive"}
-
-    async with client.messages.stream(**stream_kwargs) as stream:
-        async for event in stream:
-            t = getattr(event, "type", None)
-            if t == "content_block_delta":
-                delta = getattr(event, "delta", None)
-                if delta is None:
-                    continue
-                # text deltas → token events; citation deltas → buffered for
-                # the citations event. thinking_delta blocks (only present
-                # when adaptive thinking is on) are deliberately dropped —
-                # the widget displays the answer, not the reasoning trace.
-                # If you ever need to inspect them, log them at DEBUG here.
-                dtype = getattr(delta, "type", None)
-                if dtype == "text_delta":
-                    text = getattr(delta, "text", "") or ""
-                    if text:
-                        answer_chars += len(text)
-                        yield {"type": "token", "text": text}
-                elif dtype == "citations_delta":
-                    citation = getattr(delta, "citation", None)
-                    if citation is None:
-                        continue
-                    raw_citations.append(_serialise_citation(citation))
-
-        final = await stream.get_final_message()
+    async for evt in port.stream_chat(
+        system_prompt=system_prompt,
+        cache_system_prompt=True,
+        messages=port_messages,
+        documents=documents,
+        max_tokens=settings.chat_max_tokens,
+        model=settings.chat_model,
+        enable_adaptive_thinking=settings.chat_adaptive_thinking,
+    ):
+        if isinstance(evt, ChatTokenEvent):
+            answer_chars += len(evt.text)
+            yield {"type": "token", "text": evt.text}
+        elif isinstance(evt, ChatCitationEvent):
+            raw_citations.append(evt.citation)
+        elif isinstance(evt, ChatDoneEvent):
+            final_usage = evt.usage
 
     yield {
         "type": "citations",
         "citations": _hydrate(raw_citations, hits=hits),
     }
-    # Expose cache_creation / cache_read counters so operators can verify the
-    # system-prompt cache is firing — if cache_read_input_tokens stays at 0
-    # across repeated requests with the same site_id, a silent invalidator
-    # is at work in the prefix (timestamp, varying tool list, model swap).
-    final_usage = getattr(final, "usage", None)
+
+    # Flatten LLMUsage into the public SSE shape. The two cache counters
+    # are top-level inside ``usage`` (not nested under provider_extras) so
+    # the wire format stays byte-identical to pre-0.4.0. Non-Anthropic
+    # adapters (0.5.0) populate provider_extras differently — any keys the
+    # adapter set come through; missing cache counters default to 0.
+    extras: dict[str, int] = final_usage.provider_extras if final_usage else {}
     yield {
         "type": "done",
         "usage": {
-            "input_tokens": getattr(final_usage, "input_tokens", 0),
-            "output_tokens": getattr(final_usage, "output_tokens", 0),
-            "cache_creation_input_tokens": getattr(final_usage, "cache_creation_input_tokens", 0) or 0,
-            "cache_read_input_tokens": getattr(final_usage, "cache_read_input_tokens", 0) or 0,
+            "input_tokens": final_usage.input_tokens if final_usage else 0,
+            "output_tokens": final_usage.output_tokens if final_usage else 0,
+            "cache_creation_input_tokens": extras.get("cache_creation_input_tokens", 0),
+            "cache_read_input_tokens": extras.get("cache_read_input_tokens", 0),
         },
         "answer_chars": answer_chars,
         "model": settings.chat_model,
     }
 
 
-def _serialise_citation(citation: Any) -> dict:
-    """Anthropic citation objects use camelCase via SDK; flatten to plain dict."""
-    return {
-        "type": getattr(citation, "type", None),
-        "cited_text": getattr(citation, "cited_text", ""),
-        "document_index": getattr(citation, "document_index", -1),
-        "document_title": getattr(citation, "document_title", ""),
-        "start_char_index": getattr(citation, "start_char_index", None),
-        "end_char_index": getattr(citation, "end_char_index", None),
-    }
+def _hydrate(raw: list[PortCitation], *, hits: list[Hit]) -> list[dict]:
+    """Map port-shape citations back to the source chunk's metadata.
 
-
-def _hydrate(raw: list[dict], *, hits: list[Hit]) -> list[dict]:
-    """Map Claude's document_index back to the source chunk's metadata."""
+    Drops citations whose ``document_index`` is out-of-range for ``hits``
+    (defensive — the adapter shouldn't emit those, but the API has been
+    seen to). Dedups identical (doc, start, end) tuples that Anthropic
+    sometimes emits twice during streaming.
+    """
     out: list[dict] = []
     seen: set[tuple[int, int, int]] = set()
     for c in raw:
-        idx = c.get("document_index", -1)
-        if not (0 <= idx < len(hits)):
+        if not (0 <= c.document_index < len(hits)):
             continue
-        # de-dup identical (doc, span) tuples Anthropic sometimes emits twice
-        key = (idx, c.get("start_char_index") or 0, c.get("end_char_index") or 0)
+        key = (c.document_index, c.start_char_index or 0, c.end_char_index or 0)
         if key in seen:
             continue
         seen.add(key)
-        h = hits[idx]
+        h = hits[c.document_index]
         out.append(
             {
                 "index": len(out),
                 "url": h.metadata.get("source_url", ""),
                 "title": h.metadata.get("page_title", ""),
                 "section_title": h.metadata.get("section_title", ""),
-                "snippet": c.get("cited_text", ""),
-                "char_start": c.get("start_char_index"),
-                "char_end": c.get("end_char_index"),
+                "snippet": c.cited_text,
+                "char_start": c.start_char_index,
+                "char_end": c.end_char_index,
             }
         )
     return out
+
+
+__all__ = ["stream_chat"]

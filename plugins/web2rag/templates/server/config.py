@@ -20,6 +20,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ChatModel = Literal["claude-sonnet-4-6", "claude-haiku-4-5-20251001"]
 PromptGuardBackend = Literal["local", "anthropic"]
+# LLM provider for /chat and rewrite. 0.4.0 ships only "anthropic". 0.5.0 will
+# widen this to Literal["anthropic", "openai-compat"]; the env var is already
+# wired so generated projects scaffolded against 0.4.0 don't need a config
+# migration when 0.5.0 lands — they keep working unchanged.
+LLMProvider = Literal["anthropic"]
 
 
 class Settings(BaseSettings):
@@ -27,7 +32,19 @@ class Settings(BaseSettings):
 
     # ─── chat LLM ────────────────────────────────────────────────────────────
     anthropic_api_key: str = Field(default="", validation_alias="ANTHROPIC_API_KEY")
+    # LLM provider routes /chat and rewrite to a specific adapter. 0.4.0
+    # ships only "anthropic" (full Citations API + adaptive thinking +
+    # prompt cache_control). 0.5.0 widens this to "openai-compat" (works
+    # with OpenAI, vLLM, Ollama OpenAI mode, LiteLLM proxies, etc. —
+    # citations gracefully degrade). See plugins/web2rag/CLAUDE.md
+    # capability matrix for the trade-offs.
+    llm_provider: LLMProvider = Field(default="anthropic", validation_alias="LLM_PROVIDER")
     chat_model: ChatModel = Field(default="claude-haiku-4-5-20251001", validation_alias="CHAT_MODEL")
+    # Empty string → fall back to chat_model. Useful when chat uses a heavy
+    # model (Sonnet/Opus) but rewrite — a cheap ~256-token call — should pin
+    # to Haiku. Also lets operators in 0.5.0 keep rewrite on Anthropic Haiku
+    # even when chat moves to OpenAI/vLLM, without forcing a migration.
+    rewrite_model: str = Field(default="", validation_alias="REWRITE_MODEL")
     # 2048 (default) is double the older 1024 ceiling — streaming has no
     # HTTP-timeout cost, the system prompt already enforces concision, and
     # the extra headroom prevents mid-thought truncation on listy / multi-

@@ -80,7 +80,20 @@ Each returns `GuardResult { passed, severity: low|med|high, reasons[], redacted_
 ## Invariants (don't break these)
 
 1. **Ingest must be $0.** Anything that calls Anthropic or another paid API during `/ingest` is wrong.
-2. **Chat is Claude-only.** No Ollama-on-chat path; manual citation extraction code does not exist. Native Anthropic Citations API is always used.
+2. **Chat is Anthropic-by-default; the seam lives at `server/llm/ports.py`.** As of 0.4.0 the LLM-facing code is behind a port/adapter (`LLMChatPort` + `LLMRewritePort`), with `AnthropicChatAdapter` / `AnthropicRewriteAdapter` as the only shipped implementations. 0.5.0 will add `OpenAICompatChatAdapter` for OpenAI / vLLM / Ollama-OpenAI-mode / LiteLLM / Together / Groq. Non-Anthropic adapters trade off the Citations API and adaptive thinking — see capability matrix below. **Independence preserved:** `server/guards/prompt_guard.py` keeps its own local/anthropic Protocol seam (sync client, different concurrency contract), `eval/judges/factory.py` stays multi-provider per its own contract, and `server/retrieval/hyde.py` keeps its self-contained OpenAI-compat client (determinism requirements differ).
+
+   ### Adapter capability matrix
+
+   | Capability | AnthropicAdapter (0.4.0) | OpenAICompatAdapter (0.5.0) |
+   |---|---|---|
+   | Native streaming | ✓ | ✓ |
+   | Native Citations API (char-level offsets) | ✓ | ✗ — empty citations list, `citation_mode: "unavailable"` |
+   | Document blocks (`DocumentBlockParam`) | ✓ one block per Hit | ✗ — flattened into the system prompt as `<context>` block |
+   | Adaptive thinking | ✓ opt-in via `CHAT_ADAPTIVE_THINKING=true`, gated by model registry (Opus 4.7/4.6 + Sonnet 4.6) | ✗ adapter silently no-ops |
+   | Prompt cache_control on system block | ✓ explicit `cache_control: ephemeral` | ~ automatic on OpenAI 4o; none on vLLM/Ollama/etc |
+   | Exception types raised | `anthropic.*` (caught by `chat.py` ladder) | translated to domain hierarchy (`LLMTransientError` etc.) — lands when 0.5.0 ships |
+
+   `/health` exposes both `chat_capabilities` and `rewrite_capabilities` so operators can confirm what the current provider supports without reading source.
 3. **Eval is a TWO-tool stack across FOUR axes.** DeepEval for correctness + capability (Faithfulness, AnswerRelevancy, ContextualPrecision/Recall, GEval over helpfulness/task-completion/scope-adherence, Synthesizer for test-set gen). DeepTeam for security/red-team (jailbreak, prompt injection, bias, toxicity, prompt leakage simulators). One framework family, one judge factory, one test-case shape. Per-call PII / hallucination / toxicity is already enforced live by `guard_query` + `guard_output`; running DeepEval's overlapping metrics again at audit time would double-count, so we don't. `eval/judges/factory.py` returns `AnthropicModel` for `anthropic-haiku`, native-Ollama POST-to-`OLLAMA_URL` for `ollama:<model>`, OpenAI-compatible POST-to-`OLLAMA_URL` for `openai-compat:<model>`, and OpenAI-compatible POST-to-inline-URL for `custom-openai:<url>:<model>`; `quality.py` + `capability.py` (DeepEval) and `redteam.py` (DeepTeam) all consume it through the same `JudgeLLM.generate()` shape.
 4. **Bilingual EN + ID is first-class.** BGE-M3 multilingual embeddings + bundled widget `i18n/{en,id}.json` + system-prompt instructs the LLM to mirror the user's question language. Not a feature flag.
 5. **Politeness is configurable.** `RESPECT_ROBOTS_TXT`, `CRAWL_RATE_LIMIT`, `CRAWL_CONCURRENCY`, `CRAWL_USER_AGENT` are all overridable via `.env` and per-ingest CLI flags. Override decisions are logged into the audit report.
@@ -89,7 +102,11 @@ Each returns `GuardResult { passed, severity: low|med|high, reasons[], redacted_
 
 - `templates/server/store/chroma.py` — defines the citation metadata schema; everything reads/writes through this.
 - `templates/server/store/feedback.py` — pluggable production-feedback store. JsonlFeedbackStore today; swap in PostgresFeedbackStore / S3 / ClickHouse later by editing only `make_store()`.
-- `templates/server/llm/claude.py` — Anthropic SDK + native Citations API; no provider switch.
-- `templates/eval/judges/factory.py` — the judge swap.
+- `templates/server/llm/ports.py` — port interfaces (`LLMChatPort`, `LLMRewritePort`) + capability matrix in the docstring.
+- `templates/server/llm/factory.py` — selects which adapter backs each port, keyed off `LLM_PROVIDER`.
+- `templates/server/llm/adapters/anthropic_adapter.py` — full-feature-parity Anthropic adapter; owns the `_ADAPTIVE_THINKING_MODELS` registry and `cache_control` placement.
+- `templates/server/llm/claude.py` — thin chat orchestrator. Keeps `stream_chat` as the public symbol so `chat.py` and `audit.py` are zero-diff; marshals `ChatEvent`s back to SSE shape.
+- `templates/tests/test_chat_port_fidelity.py` — locks the public SSE event shape of `stream_chat`. Run it after any refactor that touches `claude.py` / the adapters / the orchestrator marshaling.
+- `templates/eval/judges/factory.py` — the audit judge swap (separate from the chat port).
 - `templates/widget/src/widget.js` — Web Component definition; sends thumbs-up/down to `/feedback` after every answer.
 - `references/citation-schema.md` — single source of truth for citation flow end-to-end.

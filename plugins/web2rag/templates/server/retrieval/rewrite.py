@@ -1,27 +1,22 @@
 """Query rewriting — multi-turn decontextualization.
 
 If the user's message references prior turns ("how about for v2?"), we ask
-Claude Haiku to rewrite it as a self-contained query before retrieval. This
-costs one quick LLM call per turn but recovers ~60% of multi-turn failures
+the rewrite LLM to rewrite it as a self-contained query before retrieval.
+Cheap (one quick LLM call per turn) but recovers ~60% of multi-turn failures
 in published RAG benchmarks.
 
-HyDE could plug in here too in a follow-up; we keep the surface stable.
+Since 0.4.0 the LLM call goes through ``server.llm.factory.rewrite_port()``
+so the operator can swap providers via ``LLM_PROVIDER``. Today only Anthropic
+is supported; 0.5.0 adds OpenAI-compat. The fallback model is ``chat_model``
+when ``rewrite_model`` is empty — letting operators pick a cheap fast model
+for rewrite even when chat uses something heavier.
+
+HyDE could plug in here too in a follow-up; the surface stays stable.
 """
 from __future__ import annotations
 
-from functools import lru_cache
-
-from anthropic import AsyncAnthropic
-
 from server.config import settings
-
-
-@lru_cache(maxsize=1)
-def _client() -> AsyncAnthropic:
-    """Module-level AsyncAnthropic singleton — same rationale as
-    server.llm.claude._client. Lazy via lru_cache so the empty-API-key
-    case stays caught by the chat.py 503 gate."""
-    return AsyncAnthropic(api_key=settings.anthropic_api_key)
+from server.llm.factory import rewrite_port
 
 
 _REWRITE_SYSTEM = (
@@ -41,14 +36,17 @@ async def decontextualize(message: str, history: list[dict]) -> str:
         return message  # no prior turns → nothing to decontextualise
 
     convo = "\n".join(f"{turn['role']}: {turn['content']}" for turn in history[-6:])
-    user = f"Previous turns:\n{convo}\n\nLast message: {message}\n\nRewrite the last message as a self-contained query."
-
-    client = _client()
-    resp = await client.messages.create(
-        model=settings.chat_model,
-        max_tokens=settings.rewrite_max_tokens,
-        system=_REWRITE_SYSTEM,
-        messages=[{"role": "user", "content": user}],
+    user = (
+        f"Previous turns:\n{convo}\n\nLast message: {message}\n\n"
+        "Rewrite the last message as a self-contained query."
     )
-    text = "".join(block.text for block in resp.content if block.type == "text").strip()
+
+    text = await rewrite_port().complete(
+        system=_REWRITE_SYSTEM,
+        user=user,
+        max_tokens=settings.rewrite_max_tokens,
+        # rewrite_model="" (default) → fall back to chat_model. Lets operators
+        # pin a cheap Haiku here even when chat uses Sonnet/Opus.
+        model=settings.rewrite_model or settings.chat_model,
+    )
     return text or message

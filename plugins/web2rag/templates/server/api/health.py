@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import asdict
 
 from fastapi import APIRouter
 
@@ -9,6 +10,7 @@ from server.config import settings
 from server.guards.detoxify_engine import detoxify
 from server.guards.presidio_engine import presidio
 from server.guards.prompt_guard import prompt_guard
+from server.llm.factory import chat_port, rewrite_port
 from server.models.embedder import embedder
 from server.models.reranker import reranker
 
@@ -33,6 +35,7 @@ async def health() -> dict:
         "status": "ok" if all_loaded else "warming",
         "uptime_s": round(time.monotonic() - _BOOT_AT, 2),
         "chat_model": settings.chat_model,
+        "llm_provider": settings.llm_provider,
         "prompt_guard_backend": settings.prompt_guard_backend,
         "respect_robots_txt": settings.respect_robots_txt,
         "crawl_rate_limit": settings.crawl_rate_limit,
@@ -43,4 +46,9 @@ async def health() -> dict:
             "presidio":     _state(presidio.name, presidio.loaded, presidio.load_time_s, presidio.memory_mb),
             "detoxify":     _state(detoxify.name, detoxify.loaded, detoxify.load_time_s, detoxify.memory_mb),
         },
+        # Adapter capabilities — surfaces what the current LLM_PROVIDER
+        # actually supports so operators can verify (e.g. native citations,
+        # adaptive thinking) without reading source.
+        "chat_capabilities": asdict(chat_port().capabilities),
+        "rewrite_capabilities": asdict(rewrite_port().capabilities),
     }
