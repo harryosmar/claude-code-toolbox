@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass, field
 from urllib.parse import urlparse, urljoin
 from urllib.robotparser import RobotFileParser
-from xml.etree import ElementTree as ET
+from defusedxml import ElementTree as ET
 
 import httpx
 

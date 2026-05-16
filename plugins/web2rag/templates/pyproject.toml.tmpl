@@ -34,6 +34,9 @@ dependencies = [
     "trafilatura>=1.12,<2",
     # rank-bm25 is the sparse half of hybrid retrieval (used in step 5).
     "rank-bm25>=0.2.2,<0.3",
+    # defusedxml guards sitemap XML parsing against entity-expansion DoS
+    # (billion-laughs / quadratic blowup) from untrusted third-party hosts.
+    "defusedxml>=0.7,<1",
 
     # ─── step 4: guard_ingest (free, in-process) ─────────────────────────
     # Presidio for PII detection + anonymisation. Pulls in spacy as a dep;

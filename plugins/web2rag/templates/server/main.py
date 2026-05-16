@@ -11,6 +11,7 @@ import asyncio
 import logging
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from server.api.audit import router as audit_router
 from server.api.chat import router as chat_router
@@ -31,6 +32,16 @@ app = FastAPI(
     title="web2rag-api",
     version="0.1.0",
     description="Generated RAG api with in-process bilingual embeddings + 3-guard architecture.",
+)
+
+_cors_origins = [o.strip() for o in settings.cors_allowed_origins.split(",") if o.strip()] or ["*"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type"],
+    max_age=600,
 )
 
 app.include_router(health_router)

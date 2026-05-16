@@ -134,6 +134,20 @@ class TestHealthCheck(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("ollama", msg.lower())
 
+    def test_ollama_file_scheme_rejected(self):
+        # file:// in ollama_base_url must never reach urlopen (CWE-939).
+        cfg = {"judge": {"provider": "ollama", "ollama_base_url": "file:///etc/passwd"}}
+        ok, msg = _llm_judge.health_check(cfg)
+        self.assertFalse(ok)
+        self.assertIn("unsafe scheme", msg)
+        self.assertIn("file", msg)
+
+    def test_ollama_custom_scheme_rejected(self):
+        cfg = {"judge": {"provider": "ollama", "ollama_base_url": "ftp://internal.host:21"}}
+        ok, msg = _llm_judge.health_check(cfg)
+        self.assertFalse(ok)
+        self.assertIn("unsafe scheme", msg)
+
 
 if __name__ == "__main__":
     loader = unittest.TestLoader()

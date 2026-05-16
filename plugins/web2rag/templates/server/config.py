@@ -285,6 +285,11 @@ class Settings(BaseSettings):
     # ─── server ──────────────────────────────────────────────────────────────
     api_port: int = Field(default=8787, validation_alias="API_PORT")
     log_level: str = Field(default="info", validation_alias="LOG_LEVEL")
+    # Comma-separated list of allowed CORS origins for the embedded widget.
+    # Example: "https://example.com,https://www.example.com"
+    # Empty (default) → allow all origins ("*") with credentials disabled —
+    # safe for intranet deployments; tighten for public production hosts.
+    cors_allowed_origins: str = Field(default="", validation_alias="CORS_ALLOWED_ORIGINS")
 
     @property
     def prompt_injection_lang_set(self) -> set[str]:
