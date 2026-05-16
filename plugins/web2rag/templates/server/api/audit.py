@@ -28,6 +28,7 @@ Returns: { report_path, summary }
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -75,8 +76,12 @@ async def audit(payload: AuditPayload) -> dict[str, Any]:
     # Bridge: how a runner asks the bot a question (no HTTP — direct call).
     async def answer_for(question: str) -> dict[str, Any]:
         where = {"site_id": payload.site_id} if payload.site_id else None
-        candidates = hybrid_search(question, top_k=settings.retrieve_top_k, where=where)
-        hits = rerank(question, candidates, top_n=settings.rerank_top_n)
+        candidates = await asyncio.to_thread(
+            hybrid_search, question, top_k=settings.retrieve_top_k, where=where
+        )
+        hits = await asyncio.to_thread(
+            rerank, question, candidates, top_n=settings.rerank_top_n
+        )
         documents = build_documents(hits)
         text = ""
         async for evt in stream_chat(

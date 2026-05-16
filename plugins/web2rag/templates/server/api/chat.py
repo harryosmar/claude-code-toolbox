@@ -16,6 +16,7 @@ corrected answer — the widget swaps it in with a "(corrected)" badge.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import AsyncIterator
@@ -73,8 +74,12 @@ async def chat(payload: ChatPayload) -> EventSourceResponse:
 
         # ── retrieve + rerank ───────────────────────────────────────────────
         where = {"site_id": payload.site_id} if payload.site_id else None
-        candidates = hybrid_search(message, top_k=settings.retrieve_top_k, where=where)
-        hits = rerank(message, candidates, top_n=settings.rerank_top_n)
+        candidates = await asyncio.to_thread(
+            hybrid_search, message, top_k=settings.retrieve_top_k, where=where
+        )
+        hits = await asyncio.to_thread(
+            rerank, message, candidates, top_n=settings.rerank_top_n
+        )
         if not hits:
             yield {"event": "no_context", "data": json.dumps({"type": "no_context"})}
             yield {"event": "done", "data": json.dumps({"type": "done", "answer_chars": 0, "usage": {"input_tokens": 0, "output_tokens": 0}, "guards": {"query": q_verdict.to_dict()}})}
