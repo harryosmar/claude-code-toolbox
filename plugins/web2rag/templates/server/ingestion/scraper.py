@@ -178,29 +178,31 @@ def _html_to_markdown(html: str, *, base_url: str) -> str:
 
 
 def _extract_title(html: str) -> str:
-    # Avoid a bs4 import here — title extraction via cheap regex is fine.
-    import re
-    m = re.search(r"<title[^>]*>(.*?)</title>", html, flags=re.IGNORECASE | re.DOTALL)
-    if not m:
+    try:
+        meta = trafilatura.extract_metadata(html)
+        return (meta.title or "").strip() if meta else ""
+    except Exception:  # noqa: BLE001 — title is best-effort
         return ""
-    return m.group(1).strip()
 
 
 def _extract_links(html: str, *, base_url: str) -> list[str]:
     import re
-    out = []
-    for m in re.finditer(r'href="([^"]+)"', html):
-        href = m.group(1)
-        if href.startswith("#") or href.startswith("javascript:"):
+    out: list[str] = []
+    # Match both single- and double-quoted hrefs, case-insensitively.
+    # Skip non-navigable schemes up-front to avoid polluting the BFS frontier.
+    _SKIP_SCHEMES = ("#", "javascript:", "mailto:", "tel:", "data:")
+    for m in re.finditer(r'<a\s+[^>]*href=["\']([^"\']+)["\']', html, flags=re.IGNORECASE):
+        href = m.group(1).strip()
+        if not href or any(href.startswith(s) for s in _SKIP_SCHEMES):
             continue
         out.append(urljoin(base_url, href))
     # de-dup while preserving order
     seen: set[str] = set()
     deduped: list[str] = []
-    for l in out:
-        if l not in seen:
-            seen.add(l)
-            deduped.append(l)
+    for link in out:
+        if link not in seen:
+            seen.add(link)
+            deduped.append(link)
     return deduped
 
 
