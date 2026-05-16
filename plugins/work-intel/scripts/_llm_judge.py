@@ -15,6 +15,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -76,8 +77,11 @@ def health_check(cfg: dict[str, Any]) -> tuple[bool, str]:
     if provider == "ollama":
         base_url = j.get("ollama_base_url") or "http://localhost:11434"
         url = base_url.rstrip("/") + "/api/tags"
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False, f"unsafe scheme {parsed.scheme!r} for ollama base_url (only http/https are allowed)"
         try:
-            with urllib.request.urlopen(url, timeout=5) as resp:
+            with urllib.request.urlopen(url, timeout=5) as resp:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
                 if resp.status == 200:
                     return True, f"ollama reachable at {base_url}"
                 return False, f"ollama returned HTTP {resp.status} at {url}"
