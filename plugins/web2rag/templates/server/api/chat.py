@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import AsyncIterator
+from typing import AsyncIterator, Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -45,11 +45,16 @@ router = APIRouter()
 log = logging.getLogger(__name__)
 
 
+class HistoryMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(..., min_length=1, max_length=32_000)
+
+
 class ChatPayload(BaseModel):
-    message: str = Field(..., min_length=1)
-    site_id: str | None = None
-    session_id: str | None = None
-    history: list[dict] = Field(default_factory=list)
+    message: str = Field(..., min_length=1, max_length=8_000)
+    site_id: str | None = Field(default=None, max_length=256)
+    session_id: str | None = Field(default=None, max_length=256)
+    history: list[HistoryMessage] = Field(default_factory=list, max_length=50)
 
 
 @router.post("/chat")
@@ -66,9 +71,10 @@ async def chat(payload: ChatPayload) -> EventSourceResponse:
         message = q_verdict.redacted_text or payload.message
 
         # ── rewrite (multi-turn decontextualization) ────────────────────────
-        if payload.history:
+        history_dicts = [m.model_dump() for m in payload.history]
+        if history_dicts:
             try:
-                message = await decontextualize(message, payload.history)
+                message = await decontextualize(message, history_dicts)
             except Exception:  # noqa: BLE001
                 log.exception("rewrite failed; falling back to original message")
 
@@ -99,7 +105,7 @@ async def chat(payload: ChatPayload) -> EventSourceResponse:
         try:
             async for evt in stream_chat(
                 user_message=message,
-                history=payload.history,
+                history=history_dicts,
                 documents=documents,
                 system_prompt=build_system_prompt(payload.site_id),
                 hits=hits,
